@@ -7,7 +7,7 @@
 1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting.
 2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR.
 3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`.
-4. **Small steps.** Prefer several small PRs over one large one. If a task grows, note it in the issue and split it.
+4. **Small steps, batched sensibly.** Prefer several small PRs over one large one — but batch the trivial: group units of work that share one verification command and one reviewer decision into a single issue → PR (e.g. the whole bootstrap scaffold ships as one first PR, not one issue per step). Split when scope, risk, or reviewability diverge: new experiments, new dependencies, irreversible or cost-bearing actions, and runs over ~1 h of compute each get their own issue. The agent proceeds autonomously within an approved plan; human approval gates are merges, experiment designs, cost-bearing choices, and scope changes. Review nits land as commits on the open PR — never as new issues.
 5. **Document as you go.** Update `README.md` / docstrings when behaviour changes. Research decisions and negative results go in the PR description, not just in chat.
 6. **Show who is speaking.** Posts made via CLI appear under the human's account, so the agent signs everything it authors (issues, PRs, comments) with the footer in §4. Unsigned = human.
 7. **Start from the repo, not from chat.** A fresh agent has no history: read `README.md` and `decisions.md` before asking for background, and append significant decisions to `decisions.md` as you go. Entries use this exact format so logs stay consistent across projects:
@@ -47,7 +47,7 @@
 3. Create the `experiment` label: `gh label create experiment --description "Research experiments and their results" --color 7057ff`.
 4. Gitignore run artefacts (`outputs/`, `.venv/`, …); small review figures stay committable per §2.
 5. Write the project-specific `README.md` (goal, commands, layout) — the only file the human must author by hand.
-6. Verify the workflow end-to-end with a first tiny issue → PR.
+6. Ship steps 1–5 plus a smoke test as the first issue → PR — one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step.
 
 ## 2. Behavioural rules
 
