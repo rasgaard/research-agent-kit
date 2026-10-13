@@ -5,7 +5,7 @@
 ## 1. How we work (GitHub interface)
 
 1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting.
-2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR.
+2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR. Branch from `main` always; never stack branches on unmerged PRs. If work seems to need an unmerged branch, split smaller or wait for review instead — stacked diffs confuse review, force retargeting, and cause avoidable conflicts. Keep PRs small so review is fast and stacks never need to form.
 3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`.
 4. **Small steps, batched sensibly.** Prefer several small PRs over one large one — but batch the trivial: group units of work that share one verification command and one reviewer decision into a single issue → PR (e.g. the whole bootstrap scaffold ships as one first PR, not one issue per step). Split when scope, risk, or reviewability diverge: new experiments, new dependencies, irreversible or cost-bearing actions, and runs over ~1 h of compute each get their own issue. The agent proceeds autonomously within an approved plan; human approval gates are merges, experiment designs, cost-bearing choices, and scope changes. Review nits land as commits on the open PR — never as new issues.
 5. **Document as you go.** Update `README.md` / docstrings when behaviour changes. Research decisions and negative results go in the PR description, not just in chat. Format issues, PRs, and comments for skimmability: short headers, bullets, **bold** key terms, tables for comparisons.
@@ -54,6 +54,7 @@
 - **Evidence before claims.** Read the relevant files before answering. Verify by running code whenever a claim is executable (see README for the repo's commands). Report what you ran and what you observed.
 - **Reproducibility first.** Use fixed seeds, log hyperparameters / versions, and keep randomness explicit. Never commit large artefacts (datasets, model binaries, run outputs) — log paths and summary metrics in the PR instead. Exception: small review figures (PNG, <~200 KB) may be committed to the feature branch so they are visible during review; share them per §4.
 - **Honest reporting.** State hypotheses, what you tried, and what failed. A negative result is a result. Flag uncertainty instead of guessing; distinguish observed vs. inferred.
+- **Write for returning readers.** The human dips in and out: open updates with a one-paragraph recap, expand shorthand on first use, keep headers/bullets/tables skimmable. On jargon-heavy projects keep a `docs/glossary.md` (personas, model names, terms) and link it from `README.md` so re-entry takes minutes.
 - **Minimal diffs.** Edit existing files over creating new ones. Do not create docs, configs, or dependencies unprompted. Ask before adding a dependency.
 - **No secrets.** Never commit tokens, keys, or personal data. Check `git status` / `git diff` before every commit.
 
@@ -109,6 +110,7 @@ Checklist before requesting review:
 ## 5. What the agent should NOT do
 
 - Push to `main`, force-push, rebase other people's branches, or merge its own PRs.
+- Stack branches on unmerged PRs (see §1.2).
 - Skip verification ("should work" is not done).
 - Expand scope beyond the issue without noting it and proposing a follow-up issue.
 - Invent URLs, citations, or benchmark numbers. If a reference can't be verified, say so.
