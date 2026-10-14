@@ -1,6 +1,6 @@
 # AGENTS.md — reusable research template
 
-> Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs).
+> Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs). Keep it under ~150 lines: it loads every turn, so read-once material belongs in `skills/`, and stale rules get distilled, not appended.
 
 ## 1. How we work (GitHub interface)
 
@@ -38,16 +38,7 @@
 
 **PRs** are the delivery and review space. Each PR closes one issue, carries the §4 contract body, and receives line-level feedback, change requests, and the merge. A scope tweak small enough to stay in the same review (e.g. "also add the plot") goes on the PR as a comment; anything bigger becomes a new issue.
 
-**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Discuss wherever is fastest (often chat); the agent transcribes decisions, reasons, and results into the thread so the record — not chat history — is the shared memory. Approve plans with edges ("run X, stop at Y, report Z") so go-aheads cover defined ground. When both parties touch the tree, say who owns which copy. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief.
-
-### Bootstrap (first commit of a new repo)
-
-1. Copy in `AGENTS.md` — it is the whole kit. The `experiments.jsonl` schema above is queried with plain `jq`; no helper to install.
-2. Create `decisions.md` containing only the title line and the header paragraph deferring to the §1 entry format.
-3. Create the `experiment` label: `gh label create experiment --description "Research experiments and their results" --color 7057ff`.
-4. Gitignore run artefacts (`outputs/`, `.venv/`, …); small review figures stay committable per §2.
-5. Write the project-specific `README.md` (goal, commands, layout) — the only file the human must author by hand.
-6. Ship steps 1–5 plus a smoke test as the first issue → PR — one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step.
+**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Discuss wherever is fastest (often chat); the agent transcribes decisions, reasons, and results into the thread so the record — not chat history — is the shared memory. Approve plans with edges ("run X, stop at Y, report Z") so go-aheads cover defined ground. When both parties touch the tree, say who owns which copy. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief. New repos: the `research-init` skill owns the first-commit checklist; this file assumes it ran.
 
 ## 2. Behavioural rules
 
