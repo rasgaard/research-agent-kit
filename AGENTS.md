@@ -4,11 +4,11 @@
 
 ## 1. How we work (GitHub interface)
 
-1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting.
+1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting. At project start and whenever scope shifts, the agent elicits deployment facts it cannot see (output channel, latency envelope, who judges, what infra exists) — constraints surface over time, so ask early and re-ask on redirection.
 2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR. Branch from `main` always; never stack branches on unmerged PRs. If work seems to need an unmerged branch, split smaller or wait for review instead — stacked diffs confuse review, force retargeting, and cause avoidable conflicts. Keep PRs small so review is fast and stacks never need to form.
-3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`.
+3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`. The human may grant standing delegation ("merge green routine PRs"); design, data, and threshold decisions always wait for explicit review. One coherent unit of work per PR — never one PR per micro-step; related work shares a branch and a reviewer decision. Review iterations land as commits on the open PR.
 4. **Small steps, batched sensibly.** Prefer several small PRs over one large one — but batch the trivial: group units of work that share one verification command and one reviewer decision into a single issue → PR (e.g. the whole bootstrap scaffold ships as one first PR, not one issue per step). Split when scope, risk, or reviewability diverge: new experiments, new dependencies, irreversible or cost-bearing actions, and runs over ~1 h of compute each get their own issue. The agent proceeds autonomously within an approved plan; human approval gates are merges, experiment designs, cost-bearing choices, and scope changes. Review nits land as commits on the open PR — never as new issues.
-5. **Document as you go.** Update `README.md` / docstrings when behaviour changes. Research decisions and negative results go in the PR description, not just in chat. Post intermediate results (tables, tallies, figures) as PR/issue comments when they land, with artefacts linked — review should happen in the thread, not require pulling the branch. Format issues, PRs, and comments for skimmability: short headers, bullets, **bold** key terms, tables for comparisons.
+5. **Document as you go.** Update `README.md` / docstrings when behaviour changes. Research decisions and negative results go in the PR description, not just in chat. Post intermediate results (tables, tallies, figures) as PR/issue comments when they land, with artefacts linked — review should happen in the thread, not require pulling the branch. Narrate process, not just outcomes: options considered, why this one, what was rejected. Format issues, PRs, and comments for skimmability: short headers, bullets, **bold** key terms, tables for comparisons.
 6. **Show who is speaking.** Posts made via CLI appear under the human's account, so the agent signs everything it authors (issues, PRs, comments) with the footer in §4. Unsigned = human.
 7. **Start from the repo, not from chat.** A fresh agent has no history: read `README.md` and `decisions.md` before asking for background, and append significant decisions to `decisions.md` as you go. Entries use this exact format so logs stay consistent across projects:
 
@@ -38,7 +38,7 @@
 
 **PRs** are the delivery and review space. Each PR closes one issue, carries the §4 contract body, and receives line-level feedback, change requests, and the merge. A scope tweak small enough to stay in the same review (e.g. "also add the plot") goes on the PR as a comment; anything bigger becomes a new issue.
 
-**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief.
+**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Decide in GitHub, not in chat — chat is for thinking aloud, the thread is the record. Approve plans with edges ("run X, stop at Y, report Z") so go-aheads cover defined ground. When both parties touch the tree, say who owns which copy. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief.
 
 ### Bootstrap (first commit of a new repo)
 
@@ -83,6 +83,8 @@ Figures: blob-page links to committed review figures, if any, each with a
 reading guide (what each series is + sample sizes, legend definitions, and
 explicit caveats on unvalidated points).
 Notes: assumptions, limitations, follow-ups / new issues if scope grew.
+Review focus: what needs human eyes here vs what is routine green (so review
+effort lands where it matters, not on autopilot).
 ```
 
 Author `gh` bodies via `--body-file`, never inline: the shell mangles inline
