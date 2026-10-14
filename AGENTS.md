@@ -38,7 +38,7 @@
 
 **PRs** are the delivery and review space. Each PR closes one issue, carries the §4 contract body, and receives line-level feedback, change requests, and the merge. A scope tweak small enough to stay in the same review (e.g. "also add the plot") goes on the PR as a comment; anything bigger becomes a new issue.
 
-**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Decide in GitHub, not in chat — chat is for thinking aloud, the thread is the record. Approve plans with edges ("run X, stop at Y, report Z") so go-aheads cover defined ground. When both parties touch the tree, say who owns which copy. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief.
+**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Discuss wherever is fastest (often chat); the agent transcribes decisions, reasons, and results into the thread so the record — not chat history — is the shared memory. Approve plans with edges ("run X, stop at Y, report Z") so go-aheads cover defined ground. When both parties touch the tree, say who owns which copy. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief.
 
 ### Bootstrap (first commit of a new repo)
 
