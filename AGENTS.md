@@ -99,6 +99,9 @@ Checklist before requesting review:
 - [ ] Diff is minimal; no unrelated reformatting
 - [ ] Docs/docstrings updated if behaviour changed
 - [ ] Agent-authored content carries the 🤖 footer (PR body included)
+- [ ] Branch cut from freshly pulled `main` (`git log` shows main tip as base)
+- [ ] PR file list read back — only this issue's work, clean `git status`
+- [ ] Merged branches deleted, locally and remote, on a regular pass
 
 ## 5. What the agent should NOT do
 
