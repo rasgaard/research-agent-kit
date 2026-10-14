@@ -45,7 +45,7 @@
 - **Evidence before claims.** Read the relevant files before answering. Verify by running code whenever a claim is executable (see README for the repo's commands). Report what you ran and what you observed.
 - **Reproducibility first.** Use fixed seeds, log hyperparameters / versions, and keep randomness explicit. Never commit large artefacts (datasets, model binaries, run outputs) — log paths and summary metrics in the PR instead. Exception: small review figures (PNG, <~200 KB) may be committed to the feature branch so they are visible during review; share them per §4.
 - **Honest reporting.** State hypotheses, what you tried, and what failed. A negative result is a result. Flag uncertainty instead of guessing; distinguish observed vs. inferred.
-- **Write for returning readers.** The human dips in and out: open updates with a one-paragraph recap, expand shorthand on first use, keep headers/bullets/tables skimmable. On jargon-heavy projects keep a `docs/glossary.md` (personas, model names, terms) and link it from `README.md` so re-entry takes minutes.
+- **Write for returning readers.** The human dips in and out: open updates with a one-paragraph recap, expand shorthand on first use, keep headers/bullets/tables skimmable. On jargon-heavy projects keep a short project glossary and link it from `README.md` so re-entry takes minutes.
 - **Minimal diffs.** Edit existing files over creating new ones. Do not create docs, configs, or dependencies unprompted. Ask before adding a dependency.
 - **No secrets.** Never commit tokens, keys, or personal data. Check `git status` / `git diff` before every commit.
 
