@@ -1,14 +1,14 @@
 # AGENTS.md — reusable research template
 
-> Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs).
+> Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs). Keep it under ~150 lines: it loads every turn, so read-once material belongs in `skills/`, and stale rules get distilled, not appended.
 
 ## 1. How we work (GitHub interface)
 
-1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting.
+1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting. At project start and whenever scope shifts, the agent elicits deployment facts it cannot see (output channel, latency envelope, who judges, what infra exists) — constraints surface over time, so ask early and re-ask on redirection.
 2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR. Branch from `main` always; never stack branches on unmerged PRs. If work seems to need an unmerged branch, split smaller or wait for review instead — stacked diffs confuse review, force retargeting, and cause avoidable conflicts. Keep PRs small so review is fast and stacks never need to form.
-3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`.
+3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`. The human may grant standing delegation ("merge green routine PRs"); design, data, and threshold decisions always wait for explicit review. One coherent unit of work per PR — never one PR per micro-step; related work shares a branch and a reviewer decision. Review iterations land as commits on the open PR.
 4. **Small steps, batched sensibly.** Prefer several small PRs over one large one — but batch the trivial: group units of work that share one verification command and one reviewer decision into a single issue → PR (e.g. the whole bootstrap scaffold ships as one first PR, not one issue per step). Split when scope, risk, or reviewability diverge: new experiments, new dependencies, irreversible or cost-bearing actions, and runs over ~1 h of compute each get their own issue. The agent proceeds autonomously within an approved plan; human approval gates are merges, experiment designs, cost-bearing choices, and scope changes. Review nits land as commits on the open PR — never as new issues.
-5. **Document as you go.** Update `README.md` / docstrings when behaviour changes. Research decisions and negative results go in the PR description, not just in chat. Post intermediate results (tables, tallies, figures) as PR/issue comments when they land, with artefacts linked — review should happen in the thread, not require pulling the branch. Format issues, PRs, and comments for skimmability: short headers, bullets, **bold** key terms, tables for comparisons.
+5. **Document as you go.** Update `README.md` / docstrings when behaviour changes. Research decisions and negative results go in the PR description, not just in chat. Post intermediate results (tables, tallies, figures) as PR/issue comments when they land, with artefacts linked — review should happen in the thread, not require pulling the branch. Narrate process, not just outcomes: options considered, why this one, what was rejected. Format issues, PRs, and comments for skimmability: short headers, bullets, **bold** key terms, tables for comparisons.
 6. **Show who is speaking.** Posts made via CLI appear under the human's account, so the agent signs everything it authors (issues, PRs, comments) with the footer in §4. Unsigned = human.
 7. **Start from the repo, not from chat.** A fresh agent has no history: read `README.md` and `decisions.md` before asking for background, and append significant decisions to `decisions.md` as you go. Entries use this exact format so logs stay consistent across projects:
 
@@ -38,23 +38,14 @@
 
 **PRs** are the delivery and review space. Each PR closes one issue, carries the §4 contract body, and receives line-level feedback, change requests, and the merge. A scope tweak small enough to stay in the same review (e.g. "also add the plot") goes on the PR as a comment; anything bigger becomes a new issue.
 
-**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief.
-
-### Bootstrap (first commit of a new repo)
-
-1. Copy in `AGENTS.md` — it is the whole kit. The `experiments.jsonl` schema above is queried with plain `jq`; no helper to install.
-2. Create `decisions.md` containing only the title line and the header paragraph deferring to the §1 entry format.
-3. Create the `experiment` label: `gh label create experiment --description "Research experiments and their results" --color 7057ff`.
-4. Gitignore run artefacts (`outputs/`, `.venv/`, …); small review figures stay committable per §2.
-5. Write the project-specific `README.md` (goal, commands, layout) — the only file the human must author by hand.
-6. Ship steps 1–5 plus a smoke test as the first issue → PR — one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step.
+**Human loop:** file an issue → review the PR against the contract (read the diff, run the reproduction command) → comment, request changes, or merge. Discuss wherever is fastest (often chat); the agent transcribes decisions, reasons, and results into the thread so the record — not chat history — is the shared memory. Approve plans with edges ("run X, stop at Y, report Z") so go-aheads cover defined ground. When both parties touch the tree, say who owns which copy. Terse issues are fine — one precise sentence plus acceptance criteria beats a long brief. New repos: the `research-init` skill owns the first-commit checklist; this file assumes it ran.
 
 ## 2. Behavioural rules
 
 - **Evidence before claims.** Read the relevant files before answering. Verify by running code whenever a claim is executable (see README for the repo's commands). Report what you ran and what you observed.
 - **Reproducibility first.** Use fixed seeds, log hyperparameters / versions, and keep randomness explicit. Never commit large artefacts (datasets, model binaries, run outputs) — log paths and summary metrics in the PR instead. Exception: small review figures (PNG, <~200 KB) may be committed to the feature branch so they are visible during review; share them per §4.
 - **Honest reporting.** State hypotheses, what you tried, and what failed. A negative result is a result. Flag uncertainty instead of guessing; distinguish observed vs. inferred.
-- **Write for returning readers.** The human dips in and out: open updates with a one-paragraph recap, expand shorthand on first use, keep headers/bullets/tables skimmable. On jargon-heavy projects keep a `docs/glossary.md` (personas, model names, terms) and link it from `README.md` so re-entry takes minutes.
+- **Write for returning readers.** The human dips in and out: open updates with a one-paragraph recap, expand shorthand on first use, keep headers/bullets/tables skimmable. On jargon-heavy projects keep a short project glossary and link it from `README.md` so re-entry takes minutes.
 - **Minimal diffs.** Edit existing files over creating new ones. Do not create docs, configs, or dependencies unprompted. Ask before adding a dependency.
 - **No secrets.** Never commit tokens, keys, or personal data. Check `git status` / `git diff` before every commit.
 
@@ -83,6 +74,8 @@ Figures: blob-page links to committed review figures, if any, each with a
 reading guide (what each series is + sample sizes, legend definitions, and
 explicit caveats on unvalidated points).
 Notes: assumptions, limitations, follow-ups / new issues if scope grew.
+Review focus: what needs human eyes here vs what is routine green (so review
+effort lands where it matters, not on autopilot).
 ```
 
 Author `gh` bodies via `--body-file`, never inline: the shell mangles inline
