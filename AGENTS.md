@@ -1,6 +1,6 @@
 # AGENTS.md — reusable research template
 
-Contract v1.0 (2026-10-16).
+Contract v1.1 (2026-10-16).
 
 > Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs). Keep it under ~150 lines: it loads every turn, so read-once material belongs in `skills/`, and stale rules get distilled, not appended.
 
@@ -36,7 +36,7 @@ Contract v1.0 (2026-10-16).
 
 ### Issues vs PRs
 
-**Issues** are the task list and the discussion space. File tasks, bugs, research questions, and experiment proposals here — short body, clear acceptance criteria, labels where they help (`experiment`). Debate scope and approach on the issue *before* implementation. Work needing no code change (e.g. a quick experiment) is delivered as a results comment, then the issue is closed.
+**Issues** are the task list and the discussion space. File tasks, bugs, research questions, and experiment proposals here — short body, clear acceptance criteria, labels where they help. Debate scope and approach on the issue *before* implementation. Work needing no code change (e.g. a quick experiment) is delivered as a results comment, then the issue is closed.
 
 **PRs** are the delivery and review space. Each PR closes one issue, carries the §4 contract body, and receives line-level feedback, change requests, and the merge. A scope tweak small enough to stay in the same review (e.g. "also add the plot") goes on the PR as a comment; anything bigger becomes a new issue.
 
