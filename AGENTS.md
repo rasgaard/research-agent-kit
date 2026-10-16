@@ -1,5 +1,7 @@
 # AGENTS.md — reusable research template
 
+Contract v1.0 (2026-10-16).
+
 > Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs). Keep it under ~150 lines: it loads every turn, so read-once material belongs in `skills/`, and stale rules get distilled, not appended.
 
 ## 1. How we work (GitHub interface)
