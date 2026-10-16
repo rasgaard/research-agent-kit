@@ -68,6 +68,10 @@ Run it detached (`... > outputs/trackio-show.log 2>&1 &`) during agent sessions,
 
 `space_id="user/space"` in `init()`, or `trackio sync --project ... --space-id ...`, publishes runs to a free HF Space. **Spaces are public by default** — treat publishing as an external, approval-gated action: confirm with the human, and prefer private deployments where supported. Requires `hf auth login` with a write token; never put tokens in code or commits (§2).
 
+## Deeper reference
+
+trackio ships official agent docs (storage schema, direct SQL, retrieval patterns): `uv run trackio skills add --opencode` installs them as `.agents/skills/trackio/` (`--global` and `--dest` also exist). They use the same `trackio` skill name — don't point them at this skill's install dir. This skill stays the workflow entry point; the official docs go deeper on trackio internals.
+
 ## Checklist
 
 - [ ] Dependency approved (AGENTS.md §2) before `uv add trackio`
