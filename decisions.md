@@ -25,3 +25,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.7 format (date-title heading
 - Alternatives: keep the draft for contract integration (mostly duplication; rejected), maintain a forked copy of the upstream docs (maintenance burden; rejected).
 - Refs: #19, #20.
 - Tags: tracking, skills, maintenance.
+
+## 2026-10-16 — Bootstrap revamp: no `experiment` label, pytest seeded, README skeleton
+
+- Context: the auto-created `experiment` label got applied indiscriminately (even documentation issues), bootstrapped repos had no runnable test command for the first PR's §3 requirement, and project READMEs had no shared structure for returning readers or fresh agents.
+- Decision: drop the label everywhere it was bootstrapped (creation step, issue-template auto-label, §1 example; contract → v1.1). Bootstrap now seeds `uv add --dev pytest` + a placeholder `tests/test_smoke.py`, records `uv run pytest` in the README, starts the project README from `templates/README.md` (goal / commands / layout / where things live / glossary), sets the repo description from the goal, enables `--delete-branch-on-merge`, and linearizes the steps (files → commit → remote → first issue → PR) with an explicit no-remote path.
+- Alternatives: better labeling instructions (the spam persisted; rejected); defer test setup to the first real PR (first review had nothing runnable; rejected); free-form READMEs (a shared front-page structure helps multi-agent repos; rejected).
+- Refs: #21.
+- Tags: bootstrap, workflow, template.

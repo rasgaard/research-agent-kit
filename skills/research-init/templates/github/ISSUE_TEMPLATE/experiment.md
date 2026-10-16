@@ -1,7 +1,6 @@
 ---
 name: Experiment
 about: A research experiment proposal
-labels: experiment
 ---
 
 ## Question
