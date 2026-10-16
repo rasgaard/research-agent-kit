@@ -12,7 +12,7 @@ skills/research-init/        # opencode skill: "start a new research project"
 
 ## Use in a new project
 
-Say **"start a new research project"** with the skill installed, or manually: copy `AGENTS.md` into the project and follow its `### Bootstrap` section.
+Say **"start a new research project"** with the skill installed, or manually: copy `AGENTS.md` into the project and follow the bootstrap checklist in `skills/research-init/SKILL.md`.
 
 ## Install the skill
 
