@@ -17,3 +17,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.7 format (date-title heading
 - Alternatives: no marker (drift invisible), external changelog (consumers still can't tell what they copied).
 - Refs: #15.
 - Tags: template, versioning.
+
+## 2026-10-16 — No home-grown trackio skill — use trackio's official one
+
+- Context: #19 proposed an on-demand trackio skill, drafted in #20. A subagent evaluation found that trackio ships its own official agent skill (`trackio skills add`), and that an agent following those official docs independently converged on the same patterns the draft encoded.
+- Decision: delete the drafted `skills/trackio/`; the official skill install (`uvx trackio skills add --opencode --global`) is part of kit skill setup in the README (per-project install documented as the alternative). The kit keeps no duplicate of upstream docs — the workflow rules that matter (§2 progress lines, §1.7 `experiments.jsonl`, dependency approval) already live in `AGENTS.md`.
+- Alternatives: keep the draft for contract integration (mostly duplication; rejected), maintain a forked copy of the upstream docs (maintenance burden; rejected).
+- Refs: #19, #20.
+- Tags: tracking, skills, maintenance.
