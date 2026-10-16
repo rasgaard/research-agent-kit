@@ -16,17 +16,18 @@ decisions.md                 # append-only decision log for the kit itself
 
 Say **"start a new research project"** with the skill installed, or manually: copy `AGENTS.md` into the project and follow the bootstrap checklist in `skills/research-init/SKILL.md`. The bootstrap also installs `.github/` issue/PR templates from `skills/research-init/templates/github/`; manual readers should copy those too.
 
-## Install the skill
+## Install the skills
 
 ```bash
 ln -s "$(pwd)/skills/research-init" ~/.config/opencode/skills/research-init
+uvx trackio skills add --opencode --global
 ```
 
 Then quit and restart opencode (config-time files load at startup only).
 
 ## Experiment tracking
 
-Trackio ships its own official agent skill (logging, retrieval, storage schema, alerts): `uvx trackio skills add --opencode --global` installs it for all projects; omit `--global` for a per-project install under `.agents/skills/trackio/`. The kit deliberately does not duplicate it — the workflow rules that matter are already contract text (`AGENTS.md` §2 progress lines, §1.7 `experiments.jsonl`, dependency approval).
+The trackio command above installs trackio's own official agent skill (logging, retrieval, storage schema, alerts) globally — loaded on demand, so it stays out of context until experiment tracking comes up. It also adds a `/logbook` command (`--no-command` skips it). For a per-project copy instead — travels with the repo, lands under `.agents/skills/trackio/` — rerun without `--global`. The kit deliberately does not duplicate upstream docs; the workflow rules that matter are already contract text (`AGENTS.md` §2 progress lines, §1.7 `experiments.jsonl`, dependency approval).
 
 ## Evolving the template
 
