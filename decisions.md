@@ -18,10 +18,10 @@ Append-only log. Entries follow the `AGENTS.md` §1.7 format (date-title heading
 - Refs: #15.
 - Tags: template, versioning.
 
-## 2026-10-16 — Trackio ships as an on-demand skill (revisits the #14 deferral)
+## 2026-10-16 — No home-grown trackio skill — use trackio's official one
 
-- Context: #14 deferred trackio ("dependency + doesn't fix capture"). Session request: useful, but must not sit in context every turn.
-- Decision: `skills/trackio/SKILL.md` — loaded only when experiment tracking comes up; `AGENTS.md` untouched. The skill encodes the wiring pattern (`init`/`log`/`finish`, `config`/`group`), JSON-CLI metric reading for agents, dashboard handoff for humans, alerts, and Space sync gated on explicit approval (public by default); restates that §2 progress lines and §1.7 `experiments.jsonl` are unchanged.
-- Alternatives: tracking guidance inside `AGENTS.md` (context cost every turn; rejected), pointing at upstream docs only (agent must re-research every time), no skill (status quo).
-- Refs: #19.
-- Tags: tracking, skills, ux, agents.
+- Context: #19 proposed an on-demand trackio skill, drafted in #20. A subagent evaluation found that trackio ships its own official agent skill (`trackio skills add`), and that an agent following those official docs independently converged on the same patterns the draft encoded.
+- Decision: delete the drafted `skills/trackio/`; the README points at `uvx trackio skills add --opencode [--global]` instead. The kit keeps no duplicate of upstream docs — the workflow rules that matter (§2 progress lines, §1.7 `experiments.jsonl`, dependency approval) already live in `AGENTS.md`.
+- Alternatives: keep the draft for contract integration (mostly duplication; rejected), maintain a forked copy of the upstream docs (maintenance burden; rejected).
+- Refs: #19, #20.
+- Tags: tracking, skills, maintenance.
