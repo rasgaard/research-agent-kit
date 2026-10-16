@@ -18,7 +18,8 @@ Bootstrap a new research project so the issue → branch → PR research-assista
    3. Create the `experiment` label: `gh label create experiment --description "Research experiments and their results" --color 7057ff`.
    4. Gitignore run artefacts (`outputs/`, `.venv/`, …); small review figures stay committable per §2.
    5. Write the project-specific `README.md` (goal, commands, layout) — the only file the human must author by hand.
-   6. Ship steps 1–5 plus a smoke test as the first issue → PR — you draft and file the issue; one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step.
+   6. Copy this skill's `templates/github/` to `.github/` — issue/PR templates for web-UI filings; agent `--body-file` posts don't read them.
+   7. Ship steps 1–6 plus a smoke test as the first issue → PR — you draft and file the issue; one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step.
 5. **Create the remote (only if confirmed in step 1).** Scaffold locally, commit, then `gh repo create <name> --private --source=. --push`.
 6. **Hand over.** Summarize what was created and link the first issue; do not start implementing research code unprompted.
 

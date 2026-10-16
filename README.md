@@ -8,12 +8,13 @@ Home of the reusable research-assistant setup: the `AGENTS.md` collaboration con
 AGENTS.md                    # canonical template (copy verbatim, never per-project edits here)
 skills/research-init/        # opencode skill: "start a new research project"
   SKILL.md                   # bootstrap procedure, references ../.. /AGENTS.md
+  templates/github/          # .github/ issue/PR templates copied into new projects
 decisions.md                 # append-only decision log for the kit itself
 ```
 
 ## Use in a new project
 
-Say **"start a new research project"** with the skill installed, or manually: copy `AGENTS.md` into the project and follow the bootstrap checklist in `skills/research-init/SKILL.md`.
+Say **"start a new research project"** with the skill installed, or manually: copy `AGENTS.md` into the project and follow the bootstrap checklist in `skills/research-init/SKILL.md`. The bootstrap also installs `.github/` issue/PR templates from `skills/research-init/templates/github/`; manual readers should copy those too.
 
 ## Install the skill
 
