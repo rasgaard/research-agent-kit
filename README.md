@@ -8,6 +8,7 @@ Home of the reusable research-assistant setup: the `AGENTS.md` collaboration con
 AGENTS.md                    # canonical template (copy verbatim, never per-project edits here)
 skills/research-init/        # opencode skill: "start a new research project"
   SKILL.md                   # bootstrap procedure, references ../.. /AGENTS.md
+decisions.md                 # append-only decision log for the kit itself
 ```
 
 ## Use in a new project
@@ -24,4 +25,4 @@ Then quit and restart opencode (config-time files load at startup only).
 
 ## Evolving the template
 
-Change `AGENTS.md` here via issue → branch → PR like any research change. Consumers copy at bootstrap time, so note breaking changes in the PR description.
+Change `AGENTS.md` here via issue → branch → PR like any research change. Line 3 of `AGENTS.md` carries the contract version (`Contract vX.Y (date)`); bump minor for template changes and major for breaking ones, and note breaking changes in the PR description. Consumers copy at bootstrap time — the version marker is how they spot a stale copy.

@@ -9,8 +9,8 @@ Bootstrap a new research project so the issue → branch → PR research-assista
 
 ## Procedure
 
-1. **Confirm scope.** Ask the user (question tool) for: project name, one-sentence research goal, and whether to create a private GitHub repo now. If the directory is not empty, stop and ask before touching anything.
-2. **Scaffold.** `git init -b main`, then `uv init --name <name> --python 3.12 .` (adjust version only if the user says so). Do not add dependencies unprompted.
+1. **Confirm scope.** Run `gh auth status` early — if unauthenticated, warn now (the local scaffold can still proceed; `gh auth login` is needed before the remote step). Ask the user (question tool) for: project name, one-sentence research goal, Python version (default 3.12), and whether to create a private GitHub repo now. If the directory is not empty, stop and ask before touching anything.
+2. **Scaffold.** `git init -b main`, then `uv init --name <name> --python <version> .`; delete the `main.py` hello-world stub it leaves behind. Do not add dependencies unprompted.
 3. **Copy the contract.** Copy `<repo>/AGENTS.md` to `./AGENTS.md` verbatim. Never edit it during bootstrap.
 4. **Follow the bootstrap checklist** (lives here, not in `AGENTS.md`, because it runs once per repo, not every turn):
    1. Copy in `AGENTS.md` — it is the whole kit. The `experiments.jsonl` schema in §1 is queried with plain `jq`; no helper to install.
@@ -18,9 +18,9 @@ Bootstrap a new research project so the issue → branch → PR research-assista
    3. Create the `experiment` label: `gh label create experiment --description "Research experiments and their results" --color 7057ff`.
    4. Gitignore run artefacts (`outputs/`, `.venv/`, …); small review figures stay committable per §2.
    5. Write the project-specific `README.md` (goal, commands, layout) — the only file the human must author by hand.
-   6. Ship steps 1–5 plus a smoke test as the first issue → PR — one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step.
+   6. Ship steps 1–5 plus a smoke test as the first issue → PR — you draft and file the issue; one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step.
 5. **Create the remote (only if confirmed in step 1).** Scaffold locally, commit, then `gh repo create <name> --private --source=. --push`.
-6. **Hand over.** Summarize what was created and point the user at the first issue. Do not start implementing research code unprompted.
+6. **Hand over.** Summarize what was created and link the first issue; do not start implementing research code unprompted.
 
 ## Rules
 
