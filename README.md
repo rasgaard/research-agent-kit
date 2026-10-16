@@ -28,7 +28,7 @@ Then quit and restart opencode (config-time files load at startup only).
 
 ## Experiment tracking
 
-The trackio command above installs trackio's own official agent skill (logging, retrieval, storage schema, alerts) globally — loaded on demand, so it stays out of context until experiment tracking comes up. It also adds a `/logbook` command (`--no-command` skips it). For a per-project copy instead — travels with the repo, lands under `.agents/skills/trackio/` — rerun without `--global`. The kit deliberately does not duplicate upstream docs; the workflow rules that matter are already contract text (`AGENTS.md` §2 progress lines, §1.7 `experiments.jsonl`, dependency approval).
+The trackio command above installs trackio's own official agent skill (logging, retrieval, storage schema, alerts) globally — loaded on demand, so it stays out of context until experiment tracking comes up. It also adds a `/logbook` command (`--no-command` skips it). For a per-project copy instead — travels with the repo, lands under `.agents/skills/trackio/` — rerun without `--global`. The kit deliberately does not duplicate upstream docs; the workflow rules that matter are already contract text (`AGENTS.md` §2 progress lines, §1.8 `experiments.jsonl`, dependency approval).
 
 ## Evolving the template
 

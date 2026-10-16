@@ -1,18 +1,24 @@
 # AGENTS.md — reusable research template
 
-Contract v1.1 (2026-10-16).
+Contract v1.2 (2026-10-16).
 
 > Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs). Keep it under ~150 lines: it loads every turn, so read-once material belongs in `skills/`, and stale rules get distilled, not appended.
 
 ## 1. How we work (GitHub interface)
 
 1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting. At project start and whenever scope shifts, the agent elicits deployment facts it cannot see (output channel, latency envelope, who judges, what infra exists) — constraints surface over time, so ask early and re-ask on redirection.
-2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR. Branch from `main` always; never stack branches on unmerged PRs. If work seems to need an unmerged branch, split smaller or wait for review instead — stacked diffs confuse review, force retargeting, and cause avoidable conflicts. Keep PRs small so review is fast and stacks never need to form.
-3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`. The human may grant standing delegation ("merge green routine PRs"); design, data, and threshold decisions always wait for explicit review. One coherent unit of work per PR — never one PR per micro-step; related work shares a branch and a reviewer decision. Review iterations land as commits on the open PR.
-4. **Small steps, batched sensibly.** Prefer several small PRs over one large one — but batch the trivial: group units of work that share one verification command and one reviewer decision into a single issue → PR (e.g. the whole bootstrap scaffold ships as one first PR, not one issue per step). Split when scope, risk, or reviewability diverge: new experiments, new dependencies, irreversible or cost-bearing actions, and runs over ~1 h of compute each get their own issue. The agent proceeds autonomously within an approved plan; human approval gates are merges, experiment designs, cost-bearing choices, and scope changes. Review nits land as commits on the open PR — never as new issues.
+2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR. Branch from `main` always; never stack branches on unmerged PRs. If work seems to need an unmerged branch, split smaller or wait for review instead — stacked diffs confuse review, force retargeting, and cause avoidable conflicts. Keep PRs small so review is fast and stacks never need to form. Merged branches are deleted — locally and remote — on a regular pass.
+3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`. The human may grant standing delegation ("merge green routine PRs"); design, data, and threshold decisions always wait for explicit review. One coherent unit of work per PR — never one PR per micro-step; related work shares a branch and a reviewer decision. Review iterations and nits land as commits on the open PR — never as new issues.
+4. **Small steps, batched sensibly.**
+
+   - Prefer several small PRs over one large one — but batch the trivial: group units of work that share one verification command and one reviewer decision into a single issue → PR (e.g. the whole bootstrap scaffold ships as one first PR, not one issue per step).
+   - Split when scope, risk, or reviewability diverge: new experiments, new dependencies, irreversible or cost-bearing actions, and runs over ~1 h of compute each get their own issue.
+   - The agent proceeds autonomously within an approved plan; human approval gates are merges, experiment designs, cost-bearing choices, and scope changes.
 5. **Document as you go.** Update `README.md` / docstrings when behaviour changes. Research decisions and negative results go in the PR description, not just in chat. Post intermediate results (tables, tallies, figures) as PR/issue comments when they land, with artefacts linked — review should happen in the thread, not require pulling the branch. Narrate process, not just outcomes: options considered, why this one, what was rejected. Format issues, PRs, and comments for skimmability: short headers, bullets, **bold** key terms, tables for comparisons.
 6. **Show who is speaking.** Posts made via CLI appear under the human's account, so the agent signs everything it authors (issues, PRs, comments) with the footer in §4. Unsigned = human.
-7. **Start from the repo, not from chat.** A fresh agent has no history: read `README.md` and `decisions.md` before asking for background, and append significant decisions to `decisions.md` as you go. Entries use this exact format so logs stay consistent across projects:
+7. **Start from the repo, not from chat.** A fresh agent has no history: read `README.md` and `decisions.md` before asking for background.
+
+8. **Log decisions and results as you go.** Append significant decisions to `decisions.md` in this exact format so logs stay consistent across projects:
 
     ## YYYY-MM-DD — One-line title
 
@@ -97,19 +103,16 @@ The HTML comment keeps attribution machine-readable; the visible line keeps it h
 
 Checklist before requesting review:
 
-- [ ] Test suite passes (see README for the command)
+- [ ] Test suite passes (see §3)
 - [ ] Main reproduction command from the issue runs end-to-end
 - [ ] Diff is minimal; no unrelated reformatting
-- [ ] Docs/docstrings updated if behaviour changed
+- [ ] Docs updated (see §1.5)
 - [ ] Agent-authored content carries the 🤖 footer (PR body included)
 - [ ] Branch cut from freshly pulled `main` (`git log` shows main tip as base)
 - [ ] PR file list read back — only this issue's work, clean `git status`
-- [ ] Merged branches deleted, locally and remote, on a regular pass
 
 ## 5. What the agent should NOT do
 
-- Push to `main`, force-push, rebase other people's branches, or merge its own PRs.
-- Stack branches on unmerged PRs (see §1.2).
-- Skip verification ("should work" is not done).
+- Force-push, rebase other people's branches, or merge its own PRs.
 - Expand scope beyond the issue without noting it and proposing a follow-up issue.
 - Invent URLs, citations, or benchmark numbers. If a reference can't be verified, say so.

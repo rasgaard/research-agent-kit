@@ -1,6 +1,6 @@
 # Decisions
 
-Append-only log. Entries follow the `AGENTS.md` §1.7 format (date-title heading, then Context / Decision / Alternatives / Refs / Tags). Never rewrite history — record reversals as new entries. Decisions made before this log exists (issues/PRs #1–#14) live in the merged PR history.
+Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading, then Context / Decision / Alternatives / Refs / Tags). Never rewrite history — record reversals as new entries. Decisions made before this log exists (issues/PRs #1–#14) live in the merged PR history.
 
 ## 2026-10-16 — Long runs report plain progress lines, not bars
 
@@ -21,7 +21,7 @@ Append-only log. Entries follow the `AGENTS.md` §1.7 format (date-title heading
 ## 2026-10-16 — No home-grown trackio skill — use trackio's official one
 
 - Context: #19 proposed an on-demand trackio skill, drafted in #20. A subagent evaluation found that trackio ships its own official agent skill (`trackio skills add`), and that an agent following those official docs independently converged on the same patterns the draft encoded.
-- Decision: delete the drafted `skills/trackio/`; the official skill install (`uvx trackio skills add --opencode --global`) is part of kit skill setup in the README (per-project install documented as the alternative). The kit keeps no duplicate of upstream docs — the workflow rules that matter (§2 progress lines, §1.7 `experiments.jsonl`, dependency approval) already live in `AGENTS.md`.
+- Decision: delete the drafted `skills/trackio/`; the official skill install (`uvx trackio skills add --opencode --global`) is part of kit skill setup in the README (per-project install documented as the alternative). The kit keeps no duplicate of upstream docs — the workflow rules that matter (§2 progress lines, §1.8 `experiments.jsonl`, dependency approval) already live in `AGENTS.md`.
 - Alternatives: keep the draft for contract integration (mostly duplication; rejected), maintain a forked copy of the upstream docs (maintenance burden; rejected).
 - Refs: #19, #20.
 - Tags: tracking, skills, maintenance.
@@ -33,3 +33,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.7 format (date-title heading
 - Alternatives: better labeling instructions (the spam persisted; rejected); defer test setup to the first real PR (first review had nothing runnable; rejected); free-form READMEs (a shared front-page structure helps multi-agent repos; rejected).
 - Refs: #21.
 - Tags: bootstrap, workflow, template.
+
+## 2026-10-16 — Contract cleanup: de-duplicated rules, §1.4 bulleted, logs split into §1.8
+
+- Context: an independent audit of `AGENTS.md` flagged one dense paragraph (six rules), rules stated twice (review nits, docs, tests, §5 echoes of §1.2/§2), a misfiled checklist item, and a §1.7 heading covering mostly logging formats.
+- Decision: §1.4 became bullets; review-nits merged into §1.3; checklist docs/tests items became section refs (`(see §1.5)`, `(see §3)`); §5 keeps only rules with no other home (force-push/rebase/merge-own, scope growth, invented citations); branch cleanup moved to §1.2; new §1.8 "Log decisions and results as you go" owns both log formats. Contract → v1.2; §1.7 refs updated to §1.8 across README/decisions/templates.
+- Alternatives: relocating the format blocks into `skills/` (the audit's main cut — bigger change, deferred); keeping the checklist self-contained (refs follow the file's existing dedup pattern, e.g. §5's "(see §1.2)"); acting on the remaining audit findings ("green", approval-gate lists, `experiments.jsonl` bootstrap gap) — out of scope, candidates for follow-up issues.
+- Refs: #23.
+- Tags: template, cleanup, versioning.
