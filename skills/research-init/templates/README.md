@@ -19,8 +19,8 @@ uv run pytest          # run the test suite
 ## Where things live
 
 - `AGENTS.md` — the collaboration contract: workflow, conventions, PR shape.
-- `decisions.md` — append-only decision log (entry format: AGENTS.md §1.7; grep by tag).
-- `experiments.jsonl` — one JSON row per measured configuration (AGENTS.md §1.7); query with `jq`.
+- `decisions.md` — append-only decision log (entry format: AGENTS.md §1.8; grep by tag).
+- `experiments.jsonl` — one JSON row per measured configuration (AGENTS.md §1.8); query with `jq`.
 
 ## Glossary
 
