@@ -33,7 +33,7 @@ hpc shell                  # tmux on the login node
 hpc gpu a100|v100|sxm2     # interactive GPU node (shared; short tests only)
 hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty]
 hpc status [id]            # bstat (falls back to bjobs)
-hpc logs <id> [-f]         # bpeek, or tail -F the run log
+hpc logs <id> [-f]         # tail the run log (bpeek fallback for unledgered jobs)
 hpc pull <id> [--dest D]   # rsync the run dir
 ```
 
@@ -49,6 +49,7 @@ hpc pull <id> [--dest D]   # rsync the run dir
 ## Guardrails
 
 - Never run applications on the login node; only submit and inspect.
+- Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `bkill` duplicates.
 - Never put tokens, keys, or the DTU password in the repo or job scripts.
 - Code is immutable per run: if you need a change, commit and submit a new job; do not edit `{{CODE_DIR}}`.
 - Data lives in `/work3/$USER` (not backed up) or a private HF repo pinned by revision; home is 30 GB and backed up.

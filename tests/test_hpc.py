@@ -94,6 +94,11 @@ class HpcCliTest(unittest.TestCase):
         self.assertFalse((self.repo / ".git" / "hpc" / "jobs.jsonl").exists())
         self.assertFalse(self.log.exists())
 
+    def test_queue_override(self) -> None:
+        result = self.hpc("submit", "job.lsf", "--queue", "p1", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("#BSUB -q p1", result.stdout)
+
     def test_allow_dirty_warns_but_submits_head(self) -> None:
         (self.repo / "train.py").write_text("print('changed')\n")
         result = self.hpc("submit", "job.lsf", "--allow-dirty")
