@@ -75,7 +75,10 @@ def ssh(host: str, args: list[str], input: Optional[bytes] = None, text: bool = 
 def ssh_login(host: str, script: str, args: Optional[list[str]] = None,
               **kwargs) -> subprocess.CompletedProcess:
     """Run a remote script in a login shell so LSF (bsub/bstat/bpeek) is on PATH."""
-    return ssh(host, ["bash", "-lc", script, "hpc", *(args or [])], **kwargs)
+    command = "bash -lc " + shlex.quote(script)
+    if args:
+        command += " hpc " + " ".join(shlex.quote(arg) for arg in args)
+    return ssh(host, [command], **kwargs)
 
 
 def socket_alive(host: str) -> bool:
