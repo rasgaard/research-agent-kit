@@ -1,0 +1,23 @@
+#!/bin/sh
+# DTU LSF job template. hpc renders {{CODE_DIR}}, {{RUN_DIR}}, {{SHA}}, {{JOB_NAME}}.
+# Copy to jobs/<name>.lsf and edit the BSUB block; the CLI refuses a dirty tree.
+
+#BSUB -q gpua100
+#BSUB -J {{JOB_NAME}}
+#BSUB -n 8
+#BSUB -gpu "num=1:mode=exclusive_process"
+#BSUB -R "rusage[mem=32GB]"
+#BSUB -M 32GB
+#BSUB -W 1:00
+#BSUB -o {{RUN_DIR}}/logs/%J.out
+#BSUB -e {{RUN_DIR}}/logs/%J.err
+
+set -euo pipefail
+cd "{{CODE_DIR}}"
+echo "sha={{SHA}} job=$LSB_JOBID host=$(hostname)"
+
+# Load the stack your project needs; do not rely on the login-node environment.
+# module load python/3.11.7
+# source .venv/bin/activate
+
+python3 -u train.py --out "{{RUN_DIR}}/output"

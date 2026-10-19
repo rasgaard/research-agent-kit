@@ -10,6 +10,12 @@ skills/research-init/        # opencode skill: "start a new research project"
   SKILL.md                   # bootstrap procedure, references ../.. /AGENTS.md
   templates/README.md        # project README skeleton (goal, commands, layout, glossary)
   templates/github/          # .github/ issue/PR templates copied into new projects
+skills/dtu-hpc/              # optional: DTU LSF workflow (local-first, SHA-pinned jobs)
+  SKILL.md                   # commands, guardrails, re-auth protocol
+  references/                # auth, sync, queues — verified DTU docs
+bin/hpc                      # stdlib CLI: login/shell/gpu/submit/status/logs/pull
+templates/                   # LSF job + smoke templates, ssh_config, config.ini
+tests/test_hpc.py            # stubbed CLI tests (no network)
 decisions.md                 # append-only decision log for the kit itself
 ```
 
@@ -20,11 +26,36 @@ Say **"start a new research project"** with the skill installed, or manually: co
 ## Install the skills
 
 ```bash
+mkdir -p ~/.config/opencode/skills ~/.local/bin
 ln -s "$(pwd)/skills/research-init" ~/.config/opencode/skills/research-init
+ln -s "$(pwd)/skills/dtu-hpc" ~/.config/opencode/skills/dtu-hpc
+ln -s "$(pwd)/bin/hpc" ~/.local/bin/hpc
 uvx trackio skills add --opencode --global
 ```
 
-Then quit and restart opencode (config-time files load at startup only).
+Then quit and restart opencode (config-time files load at startup only). `~/.local/bin` must be on `PATH`.
+
+## DTU HPC (optional)
+
+Local-first workflow for DTU's LSF cluster: edit/test on the Mac, ship an immutable `git archive` snapshot at a SHA, run under LSF, pull results. No GitHub credentials or git clone on the cluster.
+
+- **Auth:** outside DTU requires key + key passphrase + DTU password, so fully unattended access is impossible. `ControlMaster`/`ControlPersist` gives **one auth per session**; jobs survive disconnects. The DTU password is never stored.
+- **Queues:** local CPU smoke → interactive GPU (`a100sh`/`voltash`/`sxm2sh`, in `tmux`) → batch (`gpua100`, `gpul40s`, `gpuv100`, …).
+- **Data:** private HF repos pinned by revision, cached in `/work3/$USER/hf`; results via `hpc pull` + small metrics in git.
+
+```bash
+cp templates/ssh_config ~/.ssh/config.d/dtu     # then edit User/HostName; include it from ~/.ssh/config
+ssh-add --apple-use-keychain ~/.ssh/gbar
+cp templates/config.ini ~/.config/dtu-hpc/config.ini   # optional; defaults work
+hpc doctor
+hpc login
+hpc submit templates/smoke.lsf --dry-run
+hpc submit templates/smoke.lsf
+hpc logs <job-id> -f
+hpc pull <job-id>
+```
+
+See `skills/dtu-hpc/` for the full procedure and guardrails.
 
 ## Experiment tracking
 

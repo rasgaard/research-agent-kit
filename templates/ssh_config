@@ -1,0 +1,17 @@
+# ~/.ssh/config — DTU HPC from outside the DTU network.
+# Reference: https://www.hpc.dtu.dk/?page_id=4317
+# Outside DTU, auth = key + key passphrase + DTU password. Key-only is not enough.
+# Cache the key passphrase once:  ssh-add --apple-use-keychain ~/.ssh/gbar
+# The DTU password is never stored; ControlPersist keeps one authenticated session.
+
+Host dtu
+  HostName login9.hpc.dtu.dk
+  User sXXXXXX
+  IdentityFile ~/.ssh/gbar
+  IdentitiesOnly yes
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%r@%h:%p
+  ControlPersist 12h
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  TCPKeepAlive yes
