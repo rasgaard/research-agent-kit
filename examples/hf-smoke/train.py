@@ -7,7 +7,7 @@ from datasets import load_dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-MODEL_ID = os.environ.get("MODEL_ID", "prajjwal1/bert-tiny")
+MODEL_ID = os.environ.get("MODEL_ID", "hf-internal-testing/tiny-random-bert")
 BATCH_SIZE = 8
 STEPS = 8
 
