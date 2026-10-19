@@ -72,6 +72,12 @@ def ssh(host: str, args: list[str], input: Optional[bytes] = None, text: bool = 
     return result
 
 
+def ssh_login(host: str, script: str, args: Optional[list[str]] = None,
+              **kwargs) -> subprocess.CompletedProcess:
+    """Run a remote script in a login shell so LSF (bsub/bstat/bpeek) is on PATH."""
+    return ssh(host, ["bash", "-lc", script, "hpc", *(args or [])], **kwargs)
+
+
 def socket_alive(host: str) -> bool:
     return run(["ssh", "-O", "check", host], stdin=subprocess.DEVNULL,
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
@@ -234,8 +240,8 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
                                "SHA": sha, "JOB_NAME": job_name})
     remote_script = f"{run_dir}/job.lsf"
     ssh(host, [f"cat > {shlex.quote(remote_script)}"], input=rendered, check=True)
-    result = ssh(host, [f"cd {shlex.quote(run_dir)} && bsub < {shlex.quote(remote_script)}"],
-                 check=True)
+    result = ssh_login(host, 'cd "$1" && bsub < "$2"', [run_dir, remote_script],
+                       check=True)
     match = re.search(r"Job <(\d+)>", result.stdout + result.stderr)
     if not match:
         die(f"could not parse job id from bsub output:\n{result.stdout}{result.stderr}")
@@ -262,8 +268,7 @@ def cmd_status(host: str, args: argparse.Namespace) -> int:
     ensure(host)
     script = ('if command -v bstat >/dev/null 2>&1; then bstat "$@"; '
               'else bjobs -w "$@"; fi')
-    result = ssh(host, ["bash", "-s", "--", *([args.job_id] if args.job_id else [])],
-                 input=script, check=False)
+    result = ssh_login(host, script, [args.job_id] if args.job_id else [], check=False)
     sys.stdout.write(result.stdout)
     sys.stderr.write(result.stderr)
     return result.returncode
@@ -278,9 +283,8 @@ def cmd_logs(host: str, args: argparse.Namespace) -> int:
             die(f"job {args.job_id} not in the local ledger; cannot locate its log")
         out = f"{entry['run_dir']}/logs/{args.job_id}.out"
         err = f"{entry['run_dir']}/logs/{args.job_id}.err"
-        return ssh(host, [f"tail -F {shlex.quote(out)} {shlex.quote(err)}"], tty=True).returncode
-    return ssh(host, ["bash", "-s", "--", args.job_id],
-               input='exec bpeek "$1"', check=False).returncode
+        return ssh_login(host, 'tail -F "$1" "$2"', [out, err], tty=True).returncode
+    return ssh_login(host, 'exec bpeek "$1"', [args.job_id], check=False).returncode
 
 
 def cmd_pull(host: str, args: argparse.Namespace) -> int:
@@ -313,7 +317,7 @@ def cmd_doctor(host: str, _args: argparse.Namespace) -> int:
         result = ssh(host, [f"test -d {shlex.quote(base)} || mkdir -p {shlex.quote(base)}"])
         checks.append((f"remote root {base}", result.returncode == 0, "writable"))
         for name in ("bsub", "bstat", "rsync"):
-            probe = ssh(host, [f"command -v {name} >/dev/null 2>&1"])
+            probe = ssh_login(host, f"command -v {name} >/dev/null 2>&1")
             checks.append((f"remote {name}", probe.returncode == 0, "on PATH"))
     for label, ok, note in checks:
         print(f"{'ok  ' if ok else 'FAIL'}  {label:<28} {note}")
