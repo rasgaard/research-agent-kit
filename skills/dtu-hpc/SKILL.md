@@ -40,7 +40,7 @@ hpc pull <id> [--dest D]   # rsync the run dir
 ## Job scripts and queues
 
 - Start from `templates/job.lsf` / `templates/smoke.lsf`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}` are rendered by the CLI.
-- GPU queues (24 h max): `gpua100`, `gpul40s`, `gpuv100`, `gpua10`, `gpua40`; request with `#BSUB -gpu "num=1:mode=exclusive_process"`.
+- GPU queues: `gpua100`, `gpul40s`, `gpuv100`, `gpua10`, `gpua40`, plus `p1` (Hopper, project shares, max 1 node/job); request with `#BSUB -gpu "num=1:mode=exclusive_process"`.
 - CPU queue `hpc` (72 h max). Default walltime is only 15 min — always set `-W`.
 - Interactive dev nodes: `a100sh`, `voltash`, `sxm2sh`. Shared; use them for a one-step check, then submit batch.
 - Check availability with `classstat <queue>`, `nodestat -g <queue>`, `showstart <id>`.

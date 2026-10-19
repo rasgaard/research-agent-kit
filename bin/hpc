@@ -162,6 +162,18 @@ def extract_queue(text: str) -> str:
     return match.group(1) if match else "default"
 
 
+def apply_queue(text: str, queue: Optional[str]) -> str:
+    if not queue:
+        return text
+    if re.search(r"^#BSUB\s+-q\s+\S+", text, re.MULTILINE):
+        return re.sub(r"^#BSUB\s+-q\s+\S+", f"#BSUB -q {queue}", text,
+                      count=1, flags=re.MULTILINE)
+    lines = text.splitlines()
+    index = 1 if lines and lines[0].startswith("#!") else 0
+    lines.insert(index, f"#BSUB -q {queue}")
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
 def cmd_login(host: str, _args: argparse.Namespace) -> int:
     ensure(host)
     print(f"hpc: authenticated to {host} (multiplexed)")
@@ -211,8 +223,8 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
             user="<user>", home="<home>", repo=root.name)
         workdir = f"{base}/jobs/{run_id}/code"
         run_dir = f"{base}/jobs/{run_id}"
-        rendered = render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
-                                   "SHA": sha, "JOB_NAME": job_name})
+        rendered = apply_queue(render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
+                                               "SHA": sha, "JOB_NAME": job_name}), args.queue)
         print(f"hpc: git archive --format=tar.gz {sha} | ssh {host} tar -xzf - -C {workdir}")
         print(f"hpc: ssh {host} 'cat > {run_dir}/job.lsf'")
         print(f"hpc: ssh {host} 'cd {run_dir} && bsub < job.lsf'")
@@ -239,8 +251,8 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
     if archive.returncode != 0 or extract.returncode != 0:
         die(extract.stderr.decode(errors="replace").strip() or "failed to ship code snapshot")
 
-    rendered = render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
-                               "SHA": sha, "JOB_NAME": job_name})
+    rendered = apply_queue(render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
+                                            "SHA": sha, "JOB_NAME": job_name}), args.queue)
     remote_script = f"{run_dir}/job.lsf"
     ssh(host, [f"cat > {shlex.quote(remote_script)}"], input=rendered, check=True)
     result = ssh_login(host, 'cd "$1" && bsub < "$2"', [run_dir, remote_script],
@@ -358,6 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
     submit = sub.add_parser("submit", help="ship HEAD and submit an LSF job")
     submit.add_argument("script")
     submit.add_argument("--name", default=None)
+    submit.add_argument("--queue", default=None, help="override the script's #BSUB -q")
     submit.add_argument("--allow-dirty", action="store_true")
     submit.add_argument("--dry-run", action="store_true")
     submit.set_defaults(func=cmd_submit)

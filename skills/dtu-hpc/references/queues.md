@@ -22,6 +22,7 @@ Interactive nodes are the debug queue; batch is never used to discover that a jo
 | `gpua10` | 2× A10 24 GB |
 | `gpua40` | 2× A40 48 GB NVLink |
 | `gpuamd` | 2× AMD MI25 |
+| `p1` | Hopper (H100) pioneer queue; max 1 node/job; access via project shares |
 
 Request: `#BSUB -gpu "num=1:mode=exclusive_process"`. Extras: `-R "select[gpu32gb]"`, `-R "select[sxm2]"`. Two GPUs: `-n 8` + `num=2`.
 
