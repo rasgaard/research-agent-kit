@@ -94,6 +94,20 @@ class HpcCliTest(unittest.TestCase):
         self.assertFalse((self.repo / ".git" / "hpc" / "jobs.jsonl").exists())
         self.assertFalse(self.log.exists())
 
+    def test_stage_ships_head_and_points_current(self) -> None:
+        result = self.hpc("stage")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("/work3/tester/hpc/proj/interactive/", result.stdout)
+        log = self.log.read_text()
+        self.assertIn("tar -xzf", log)
+        self.assertIn("ln -sfn", log)
+
+    def test_stage_refuses_dirty_tree(self) -> None:
+        (self.repo / "train.py").write_text("print('changed')\n")
+        result = self.hpc("stage")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dirty", result.stderr)
+
     def test_queue_override(self) -> None:
         result = self.hpc("submit", "job.lsf", "--queue", "p1", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)

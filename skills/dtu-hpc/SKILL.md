@@ -19,6 +19,7 @@ Local-first workflow: edit and test on the Mac, ship an immutable `git archive` 
 
 1. **Local smoke first.** Unit tests + a tiny CPU run. Do not spend a GPU slot on "does it import".
 2. **Commit.** The CLI ships `HEAD`; a dirty tree is refused. WIP commits on a feature branch are fine.
+2b. **Interactive check (optional).** `hpc stage` → `hpc shell` (CPU `linuxsh`) or `hpc gpu a100`; `cd .../interactive/current` and run the script. Shared nodes: short tests only.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.
 5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (`bstat`). `bpeek` shows output of running jobs.
@@ -29,8 +30,9 @@ Local-first workflow: edit and test on the Mac, ship an immutable `git archive` 
 ```text
 hpc login                  # ensure master socket (opens Terminal if re-auth needed)
 hpc doctor                 # local + remote prerequisites
-hpc shell                  # tmux on the login node
-hpc gpu a100|v100|sxm2     # interactive GPU node (shared; short tests only)
+hpc stage                  # ship HEAD to /work3/.../interactive/current
+hpc shell                  # linuxsh shared CPU node, in tmux
+hpc gpu a100|v100|sxm2     # shared GPU node, in tmux (short tests only)
 hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty]
 hpc status [id]            # bstat (falls back to bjobs)
 hpc logs <id> [-f]         # tail the run log (bpeek fallback for unledgered jobs)

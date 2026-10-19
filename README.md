@@ -49,6 +49,8 @@ ssh-add --apple-use-keychain ~/.ssh/gbar
 cp templates/config.ini ~/.config/dtu-hpc/config.ini   # optional; defaults work
 hpc doctor
 hpc login
+hpc stage                       # HEAD → /work3/.../interactive/current
+hpc shell                       # CPU shared node (linuxsh), or: hpc gpu a100
 hpc submit templates/smoke.lsf --dry-run
 hpc submit templates/smoke.lsf
 hpc logs <job-id> -f

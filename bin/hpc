@@ -187,7 +187,10 @@ def cmd_ensure(host: str, args: argparse.Namespace) -> int:
 
 def cmd_shell(host: str, args: argparse.Namespace) -> int:
     ensure(host)
-    return ssh(host, [f"tmux new -A -s {shlex.quote(args.session)}"], tty=True).returncode
+    print("hpc: shared CPU node via linuxsh (not the login node); tmux session "
+          f"'{args.session}'", file=sys.stderr)
+    return ssh_login(host, 'tmux new -A -s "$1" linuxsh', [args.session],
+                     tty=True).returncode
 
 
 def cmd_gpu(host: str, args: argparse.Namespace) -> int:
@@ -195,7 +198,39 @@ def cmd_gpu(host: str, args: argparse.Namespace) -> int:
     command = GPU_NODES[args.kind]
     session = f"gpu-{args.kind}"
     print(f"hpc: {command} (shared node; short tests only) in tmux '{session}'", file=sys.stderr)
-    return ssh(host, [f"tmux new -A -s {shlex.quote(session)} {command}"], tty=True).returncode
+    return ssh_login(host, 'tmux new -A -s "$1" "$2"', [session, command],
+                     tty=True).returncode
+
+
+def cmd_stage(host: str, args: argparse.Namespace) -> int:
+    root = repo_root()
+    dirty = git("status", "--porcelain", cwd=root).stdout.strip()
+    if dirty and not args.allow_dirty:
+        die("working tree is dirty; commit (or pass --allow-dirty) before staging")
+    if dirty:
+        print("hpc: warning: staging HEAD; uncommitted edits are not shipped", file=sys.stderr)
+    sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
+    ensure(host)
+    base = remote_root(host, load_config(), root)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    destination = f"{base}/interactive/{stamp}-{sha[:8]}"
+    ssh(host, [f"mkdir -p {shlex.quote(destination)}"], check=True)
+    archive = subprocess.Popen(["git", "archive", "--format=tar.gz", sha], cwd=root,
+                               stdout=subprocess.PIPE)
+    extract = run(["ssh", host, f"tar -xzf - -C {shlex.quote(destination)}"],
+                  stdin=archive.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    archive.stdout.close()
+    archive.wait()
+    if archive.returncode != 0 or extract.returncode != 0:
+        die(extract.stderr.decode(errors="replace").strip() or "failed to stage code")
+    current = f"{base}/interactive/current"
+    ssh(host, [f"ln -sfn {shlex.quote(destination)} {shlex.quote(current)}"], check=True)
+    print(f"hpc: staged {sha[:8]} → {destination}")
+    print(f"hpc: current → {current}")
+    print("hpc: next → hpc shell        (CPU, linuxsh)")
+    print("hpc:        hpc gpu a100     (GPU, shared debug node)")
+    print(f"hpc:        cd {current} && python -u your_script.py")
+    return 0
 
 
 def cmd_submit(host: str, args: argparse.Namespace) -> int:
@@ -368,6 +403,10 @@ def build_parser() -> argparse.ArgumentParser:
     gpu = sub.add_parser("gpu", help="interactive GPU node in tmux")
     gpu.add_argument("kind", choices=sorted(GPU_NODES))
     gpu.set_defaults(func=cmd_gpu)
+
+    stage = sub.add_parser("stage", help="ship HEAD to /work3 for interactive testing")
+    stage.add_argument("--allow-dirty", action="store_true")
+    stage.set_defaults(func=cmd_stage)
 
     submit = sub.add_parser("submit", help="ship HEAD and submit an LSF job")
     submit.add_argument("script")
