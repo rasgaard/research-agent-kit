@@ -21,7 +21,7 @@ def main() -> None:
         print(f"device={torch.cuda.get_device_name(0)}")
 
     dataset = load_dataset("nyu-mll/glue", "mrpc", split="train[:64]")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, num_labels=2)
     model.to(device)
     model.train()
