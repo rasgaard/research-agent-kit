@@ -22,7 +22,7 @@ from typing import NoReturn, Optional
 
 DEFAULT_CONFIG = Path.home() / ".config" / "dtu-hpc" / "config.ini"
 DEFAULT_REMOTE_ROOT = "/work3/{user}/hpc/{repo}"
-GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
+GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh", "p1": "p1gpush"}
 
 
 def die(message: str, code: int = 1) -> NoReturn:
