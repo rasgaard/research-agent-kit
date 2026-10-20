@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import getpass
 import json
 import os
 import re
@@ -22,8 +23,16 @@ from typing import NoReturn, Optional
 
 DEFAULT_CONFIG = Path.home() / ".config" / "dtu-hpc" / "config.ini"
 DEFAULT_REMOTE_ROOT = "/work3/{user}/hpc/{repo}"
+DEFAULT_VENV = "/work3/{user}/hpc/venvs/{repo}"
+DEFAULT_HF_HOME = "/work3/{user}/hf"
+DEFAULT_UV_CACHE = "/work3/{user}/.cache/uv"
+DEFAULT_SECRETS = "$HOME/.config/dtu-hpc/secrets.env"
 GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
 P1_GPU_COMMAND = 'export TERM=${TERM:-xterm-256color}; p1gpush'
+
+
+def config_path() -> Path:
+    return Path(os.environ.get("HPC_CONFIG", str(DEFAULT_CONFIG))).expanduser()
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -51,8 +60,15 @@ def git_dir(root: Path) -> Path:
 
 
 def load_config() -> dict[str, str]:
-    config = {"host": "dtu", "remote_root": DEFAULT_REMOTE_ROOT}
-    path = Path(os.environ.get("HPC_CONFIG", str(DEFAULT_CONFIG))).expanduser()
+    config = {
+        "host": "dtu",
+        "remote_root": DEFAULT_REMOTE_ROOT,
+        "venv": DEFAULT_VENV,
+        "hf_home": DEFAULT_HF_HOME,
+        "uv_cache": DEFAULT_UV_CACHE,
+        "secrets": DEFAULT_SECRETS,
+    }
+    path = config_path()
     if path.exists():
         parser = configparser.ConfigParser()
         parser.read(path)
@@ -85,6 +101,48 @@ def ssh_login(host: str, script: str, args: Optional[list[str]] = None,
 def socket_alive(host: str) -> bool:
     return run(["ssh", "-O", "check", host], stdin=subprocess.DEVNULL,
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
+def ssh_batch(host: str, args: list[str]) -> subprocess.CompletedProcess:
+    """Run a remote command without ever prompting for auth."""
+    return run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, *args],
+               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+               stderr=subprocess.PIPE, text=True)
+
+
+def dtu_aliases(path: Path) -> list[str]:
+    """Return SSH aliases whose Host/HostName points at DTU HPC."""
+    if not path.exists():
+        return []
+    aliases: list[str] = []
+    pending: list[str] = []
+    hostname = ""
+
+    def flush() -> None:
+        nonlocal pending, hostname
+        if pending and ("hpc.dtu.dk" in hostname.lower() or
+                        any("hpc.dtu.dk" in name.lower() for name in pending)):
+            aliases.extend(pending)
+        pending = []
+        hostname = ""
+
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        key = parts[0].lower()
+        if key == "host" and len(parts) > 1:
+            flush()
+            pending = parts[1:]
+        elif key == "hostname" and len(parts) > 1:
+            hostname = parts[1]
+    flush()
+    result: list[str] = []
+    for alias in aliases:
+        if alias != "*" and alias not in result:
+            result.append(alias)
+    return result
 
 
 def ensure(host: str, timeout: int = 180) -> None:
@@ -158,6 +216,59 @@ def render(text: str, values: dict[str, str]) -> str:
     return text
 
 
+def render_values(config: dict[str, str], root: Path, workdir: str, run_dir: str,
+                  sha: str, job_name: str, user: str = "<user>",
+                  home: str = "<home>") -> dict[str, str]:
+    fields = {"user": user, "home": home, "repo": root.name}
+
+    def remote(key: str, default: str) -> str:
+        return config.get(key, default).format(**fields)
+
+    return {
+        "CODE_DIR": workdir,
+        "RUN_DIR": run_dir,
+        "SHA": sha,
+        "JOB_NAME": job_name,
+        "VENV": remote("venv", DEFAULT_VENV),
+        "HF_HOME": remote("hf_home", DEFAULT_HF_HOME),
+        "UV_CACHE": remote("uv_cache", DEFAULT_UV_CACHE),
+        "SECRETS": remote("secrets", DEFAULT_SECRETS),
+    }
+
+
+def ship_snapshot(host: str, root: Path, sha: str, destination: str) -> None:
+    """Stream `git archive <sha>` into a remote directory."""
+    ssh(host, [f"mkdir -p {shlex.quote(destination)}"], check=True)
+    archive = subprocess.Popen(["git", "archive", "--format=tar.gz", sha], cwd=root,
+                               stdout=subprocess.PIPE)
+    extract = run(["ssh", host, f"tar -xzf - -C {shlex.quote(destination)}"],
+                  stdin=archive.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    archive.stdout.close()
+    archive.wait()
+    if archive.returncode != 0 or extract.returncode != 0:
+        die(extract.stderr.decode(errors="replace").strip() or "failed to ship code snapshot")
+
+
+def merge_env(text: str, name: str, value: str) -> str:
+    """Return env-file text with NAME set, preserving unrelated lines."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    output: list[str] = []
+    found = False
+    for line in lines:
+        if line.lstrip().startswith("#") or "=" not in line:
+            output.append(line)
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key == name:
+            output.append(f"{name}={value}")
+            found = True
+        else:
+            output.append(line)
+    if not found:
+        output.append(f"{name}={value}")
+    return "\n".join(output) + "\n"
+
+
 def extract_queue(text: str) -> str:
     match = re.search(r"^#BSUB\s+-q\s+(\S+)", text, re.MULTILINE)
     return match.group(1) if match else "default"
@@ -183,6 +294,128 @@ def cmd_login(host: str, _args: argparse.Namespace) -> int:
 
 def cmd_ensure(host: str, args: argparse.Namespace) -> int:
     ensure(host, timeout=args.timeout)
+    return 0
+
+
+def cmd_init(_host: str, args: argparse.Namespace) -> int:
+    path = config_path()
+    if path.exists() and not args.force:
+        die(f"config already exists: {path} (pass --force to overwrite)")
+    aliases = dtu_aliases(Path.home() / ".ssh" / "config")
+    if not aliases and not args.ssh_host:
+        print("hpc: no DTU SSH alias found in ~/.ssh/config", file=sys.stderr)
+        print("hpc: add one (example), or rerun with --ssh-host <alias>:",
+              file=sys.stderr)
+        print("  Host dtu\n    HostName login9.hpc.dtu.dk\n    User <you>",
+              file=sys.stderr)
+        return 1
+    chosen = args.ssh_host or aliases[0]
+    if len(aliases) > 1 and not args.ssh_host:
+        print(f"hpc: DTU aliases: {', '.join(aliases)}; using {chosen}",
+              file=sys.stderr)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "[hpc]\n"
+        f"host = {chosen}\n"
+        f"remote_root = {DEFAULT_REMOTE_ROOT}\n"
+        f"venv = {DEFAULT_VENV}\n"
+        f"hf_home = {DEFAULT_HF_HOME}\n"
+        f"uv_cache = {DEFAULT_UV_CACHE}\n"
+        f"secrets = {DEFAULT_SECRETS}\n",
+        encoding="utf-8",
+    )
+    print(f"hpc: wrote {path}")
+    print(f"hpc: ssh host = {chosen}")
+    if chosen not in aliases:
+        print(f"hpc: note: '{chosen}' is not in ~/.ssh/config; add a Host entry "
+              "or rerun with --ssh-host <alias>", file=sys.stderr)
+    bin_dir = Path.home() / ".local" / "bin"
+    if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
+        print(f"hpc: warning: {bin_dir} is not on PATH", file=sys.stderr)
+    print("hpc: next → hpc login        (opens Terminal; DTU password required)")
+    print("hpc:        hpc sync-env     (once; builds the shared venv)")
+    print("hpc:        hpc doctor")
+    return 0
+
+
+def cmd_sync_env(host: str, args: argparse.Namespace) -> int:
+    root = repo_root()
+    dirty = git("status", "--porcelain", cwd=root).stdout.strip()
+    if dirty and not args.allow_dirty:
+        die("working tree is dirty; commit (or pass --allow-dirty) before syncing")
+    if dirty:
+        print("hpc: warning: syncing HEAD; uncommitted edits are not shipped",
+              file=sys.stderr)
+    sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
+    ensure(host)
+    config = load_config()
+    user, home = remote_env(host)
+    base = config["remote_root"].format(user=user, home=home, repo=root.name)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    destination = f"{base}/env/{stamp}-{sha[:8]}"
+    ship_snapshot(host, root, sha, destination)
+    values = render_values(config, root, destination, destination, sha, "sync-env",
+                           user, home)
+    venv, cache = values["VENV"], values["UV_CACHE"]
+    print(f"hpc: syncing {venv} from {sha[:8]} (first run downloads torch)", file=sys.stderr)
+    script = ('module load python3/3.11.9 2>/dev/null || true; cd "$1" && '
+              'export PATH="$HOME/.local/bin:$PATH" UV_PYTHON_DOWNLOADS=never '
+              'UV_PROJECT_ENVIRONMENT="$2" UV_CACHE_DIR="$3" && '
+              'uv sync --frozen --python "$(command -v python3)"')
+    result = ssh_login(host, script, [destination, venv, cache], check=False)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        die("uv sync failed")
+    print(f"hpc: venv ready: {venv}")
+    print("hpc: next → hpc doctor   |   hpc submit <job.lsf>")
+    return 0
+
+
+SECRET_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+EXPAND_PATH = r'f="$1"; f="${f/#\~/$HOME}"; f="${f/#\$HOME/$HOME}"'
+
+
+def remote_read(host: str, path: str) -> str:
+    result = ssh_login(host, EXPAND_PATH + '; test -f "$f" && cat "$f" || true',
+                       [path], check=False)
+    return result.stdout
+
+
+def cmd_secret_set(host: str, args: argparse.Namespace) -> int:
+    if not SECRET_NAME.match(args.name):
+        die(f"invalid secret name: {args.name}")
+    if args.file:
+        value = Path(args.file).expanduser().read_text(encoding="utf-8").rstrip("\n")
+    elif sys.stdin.isatty():
+        value = getpass.getpass(f"{args.name}: ").rstrip("\n")
+    else:
+        value = sys.stdin.read().rstrip("\n")
+    if not value.strip():
+        die("empty value; pipe it on stdin or pass --file")
+    if "\n" in value:
+        die("secret value must be a single line")
+    path = load_config().get("secrets", DEFAULT_SECRETS)
+    if args.dry_run:
+        print(f"hpc: would set {args.name} in {path} on {host} (no value shown)")
+        return 0
+    ensure(host)
+    merged = merge_env(remote_read(host, path), args.name, shlex.quote(value))
+    script = (EXPAND_PATH + '; umask 077; mkdir -p "$(dirname "$f")"; '
+              'cat > "$f"; chmod 600 "$f"')
+    ssh_login(host, script, [path], input=merged, check=True)
+    print(f"hpc: set {args.name} in {path} on {host} (mode 600)")
+    return 0
+
+
+def cmd_secret_list(host: str, _args: argparse.Namespace) -> int:
+    ensure(host)
+    path = load_config().get("secrets", DEFAULT_SECRETS)
+    names = [line.split("=", 1)[0].strip()
+             for line in remote_read(host, path).splitlines()
+             if "=" in line and not line.lstrip().startswith("#")]
+    print("\n".join(names) if names else "(no secrets)")
     return 0
 
 
@@ -220,15 +453,7 @@ def cmd_stage(host: str, args: argparse.Namespace) -> int:
     base = remote_root(host, load_config(), root)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     destination = f"{base}/interactive/{stamp}-{sha[:8]}"
-    ssh(host, [f"mkdir -p {shlex.quote(destination)}"], check=True)
-    archive = subprocess.Popen(["git", "archive", "--format=tar.gz", sha], cwd=root,
-                               stdout=subprocess.PIPE)
-    extract = run(["ssh", host, f"tar -xzf - -C {shlex.quote(destination)}"],
-                  stdin=archive.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    archive.stdout.close()
-    archive.wait()
-    if archive.returncode != 0 or extract.returncode != 0:
-        die(extract.stderr.decode(errors="replace").strip() or "failed to stage code")
+    ship_snapshot(host, root, sha, destination)
     current = f"{base}/interactive/current"
     ssh(host, [f"ln -sfn {shlex.quote(destination)} {shlex.quote(current)}"], check=True)
     print(f"hpc: staged {sha[:8]} → {destination}")
@@ -245,27 +470,23 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
     if not script.exists():
         die(f"job script not found: {script}")
     dirty = git("status", "--porcelain", cwd=root).stdout.strip()
-    if dirty and not args.allow_dirty:
-        die("working tree is dirty; commit (or push a WIP commit) before submitting")
-    if dirty:
-        print("hpc: warning: submitting a dirty tree; the snapshot is HEAD, not your edits",
-              file=sys.stderr)
     sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
     branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=root).stdout.strip()
-    if branch == "HEAD" and not args.allow_dirty:
-        die("detached HEAD; check out a branch before submitting")
 
     job_name = args.name or script.stem
     source = script.read_text(encoding="utf-8")
     if args.dry_run:
+        if dirty:
+            print("hpc: warning: dirty tree; preview shows HEAD, not your edits",
+                  file=sys.stderr)
         stamps = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         run_id = f"{stamps}-{sha[:8]}"
         base = load_config()["remote_root"].format(
             user="<user>", home="<home>", repo=root.name)
         workdir = f"{base}/jobs/{run_id}/code"
         run_dir = f"{base}/jobs/{run_id}"
-        rendered = apply_queue(render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
-                                               "SHA": sha, "JOB_NAME": job_name}), args.queue)
+        rendered = apply_queue(render(source, render_values(
+            load_config(), root, workdir, run_dir, sha, job_name)), args.queue)
         print(f"hpc: git archive --format=tar.gz {sha} | ssh {host} tar -xzf - -C {workdir}")
         print(f"hpc: ssh {host} 'cat > {run_dir}/job.lsf'")
         print(f"hpc: ssh {host} 'cd {run_dir} && bsub < job.lsf'")
@@ -273,27 +494,28 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
         print(rendered)
         return 0
 
+    if dirty and not args.allow_dirty:
+        die("working tree is dirty; commit (or push a WIP commit) before submitting")
+    if dirty:
+        print("hpc: warning: submitting a dirty tree; the snapshot is HEAD, not your edits",
+              file=sys.stderr)
+    if branch == "HEAD" and not args.allow_dirty:
+        die("detached HEAD; check out a branch before submitting")
+
     ensure(host)
     config = load_config()
-    base = remote_root(host, config, root)
+    user, home = remote_env(host)
+    base = config["remote_root"].format(user=user, home=home, repo=root.name)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"{stamp}-{sha[:8]}"
     run_dir = f"{base}/jobs/{run_id}"
     workdir = f"{run_dir}/code"
     logdir = f"{run_dir}/logs"
     ssh(host, [f"mkdir -p {shlex.quote(workdir)} {shlex.quote(logdir)}"], check=True)
+    ship_snapshot(host, root, sha, workdir)
 
-    archive = subprocess.Popen(["git", "archive", "--format=tar.gz", sha], cwd=root,
-                               stdout=subprocess.PIPE)
-    extract = run(["ssh", host, f"tar -xzf - -C {shlex.quote(workdir)}"],
-                  stdin=archive.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    archive.stdout.close()
-    archive.wait()
-    if archive.returncode != 0 or extract.returncode != 0:
-        die(extract.stderr.decode(errors="replace").strip() or "failed to ship code snapshot")
-
-    rendered = apply_queue(render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
-                                            "SHA": sha, "JOB_NAME": job_name}), args.queue)
+    rendered = apply_queue(render(source, render_values(
+        config, root, workdir, run_dir, sha, job_name, user, home)), args.queue)
     remote_script = f"{run_dir}/job.lsf"
     ssh(host, [f"cat > {shlex.quote(remote_script)}"], input=rendered, check=True)
     result = ssh_login(host, 'cd "$1" && bsub < "$2"', [run_dir, remote_script],
@@ -361,24 +583,51 @@ def cmd_pull(host: str, args: argparse.Namespace) -> int:
     return 0
 
 
+def print_checks(checks: list[tuple[str, bool, str]]) -> None:
+    for label, ok, note in checks:
+        print(f"{'ok  ' if ok else 'FAIL'}  {label:<28} {note}")
+
+
 def cmd_doctor(host: str, _args: argparse.Namespace) -> int:
     root = repo_root()
     config = load_config()
     checks: list[tuple[str, bool, str]] = []
     for name in ("git", "ssh", "rsync"):
         checks.append((name, bool(shutil_which(name)), "local binary"))
-    checks.append(("ssh master", socket_alive(host), f"ssh -O check {host}"))
-    if socket_alive(host):
-        user, _home = remote_env(host)
-        checks.append(("remote user", bool(user), user))
-        base = remote_root(host, config, root)
-        result = ssh(host, [f"test -d {shlex.quote(base)} || mkdir -p {shlex.quote(base)}"])
-        checks.append((f"remote root {base}", result.returncode == 0, "writable"))
-        for name in ("bsub", "bstat", "rsync"):
-            probe = ssh_login(host, f"command -v {name} >/dev/null 2>&1")
-            checks.append((f"remote {name}", probe.returncode == 0, "on PATH"))
-    for label, ok, note in checks:
-        print(f"{'ok  ' if ok else 'FAIL'}  {label:<28} {note}")
+    if not socket_alive(host):
+        checks.append(("ssh master", False, f"no live socket — run: hpc login ({host})"))
+        print_checks(checks)
+        return 1
+    checks.append(("ssh master", True, f"ssh -O check {host}"))
+    probe = ssh_batch(host, ["true"])
+    if probe.returncode != 0:
+        checks.append(("remote auth", False, "socket stale — run: hpc login"))
+        print_checks(checks)
+        return 1
+    checks.append(("remote auth", True, "non-interactive probe"))
+    user, home = remote_env(host)
+    checks.append(("remote user", bool(user), user))
+    base = remote_root(host, config, root)
+    result = ssh(host, [f"test -d {shlex.quote(base)} || mkdir -p {shlex.quote(base)}"])
+    checks.append((f"remote root {base}", result.returncode == 0, "writable"))
+    for name in ("bsub", "bstat", "rsync", "uv"):
+        probe = ssh_login(host, f"command -v {name} >/dev/null 2>&1")
+        checks.append((f"remote {name}", probe.returncode == 0, "on PATH"))
+    venv = render_values(config, root, "", "", "", "", user, home)["VENV"]
+    probe = ssh_login(host, 'test -x "$1/bin/python"', [venv])
+    checks.append((f"venv {venv}", probe.returncode == 0,
+                   "synced" if probe.returncode == 0 else "missing — run: hpc sync-env"))
+    secrets = config.get("secrets", DEFAULT_SECRETS)
+    probe = ssh_login(host, EXPAND_PATH + '; test -f "$f" && stat -c %a "$f"',
+                      [secrets])
+    if probe.returncode == 0:
+        mode = probe.stdout.strip()
+        checks.append(("remote secrets", mode in {"600", "400"},
+                       f"{secrets} (mode {mode})"))
+    else:
+        checks.append(("remote secrets", True,
+                       f"missing (optional) — hpc secret set NAME ({secrets})"))
+    print_checks(checks)
     return 0 if all(ok for _, ok, _ in checks) else 1
 
 
@@ -401,6 +650,25 @@ def build_parser() -> argparse.ArgumentParser:
     ensure_parser = sub.add_parser("ensure", help="make sure the master socket is alive")
     ensure_parser.add_argument("--timeout", type=int, default=180)
     ensure_parser.set_defaults(func=cmd_ensure)
+
+    init = sub.add_parser("init", help="write the local config (run once)")
+    init.add_argument("--ssh-host", default=None, help="SSH alias to store")
+    init.add_argument("--force", action="store_true")
+    init.set_defaults(func=cmd_init)
+
+    sync_env = sub.add_parser("sync-env", help="ship HEAD and uv sync the shared venv")
+    sync_env.add_argument("--allow-dirty", action="store_true")
+    sync_env.set_defaults(func=cmd_sync_env)
+
+    secret = sub.add_parser("secret", help="manage the remote secrets env file")
+    secret_sub = secret.add_subparsers(dest="secret_command", required=True)
+    secret_set = secret_sub.add_parser("set", help="set a key (stdin, prompt, or --file)")
+    secret_set.add_argument("name")
+    secret_set.add_argument("--file", default=None)
+    secret_set.add_argument("--dry-run", action="store_true")
+    secret_set.set_defaults(func=cmd_secret_set)
+    secret_list = secret_sub.add_parser("list", help="list key names (never values)")
+    secret_list.set_defaults(func=cmd_secret_list)
 
     shell = sub.add_parser("shell", help="shared CPU node (linuxsh) in tmux")
     shell.add_argument("--session", default="hpc")

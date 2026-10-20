@@ -44,8 +44,9 @@ model work on CPU, do **not** take a GPU. Use the `hpc` CPU queue instead:
 
 - The 72 h ceiling is the real constraint. Chunk work per cell, write one output
   per cell, and make the runner skip completed cells on re-submit.
-- Export API keys from the submit environment; never write them into the repo or
-  the job script.
+- Local exports do not cross `hpc submit` (fresh SSH login shell). Store keys with
+  `hpc secret set NAME`, then source `{{SECRETS}}` in the job; never write them into
+  the repo or the job script.
 - Compute nodes have network egress. Prove it with a one-call smoke before a
   long run.
 - Use `python -u` so `bpeek`/`hpc logs -f` show progress.
@@ -90,4 +91,8 @@ Request: `#BSUB -gpu "num=1:mode=exclusive_process"`. Extras: `-R "select[gpu32g
 - `bstat`, `bstat -C` (efficiency), `bstat -M` (memory), `bpeek <id>`, `bkill <id>`.
 - `showstart <id>` for an ETA; `classstat <queue>` for load; `nodestat -g <queue>` for GPUs.
 - Arrays: `#BSUB -J "sweep[1-20]"`; dependencies: `bsub -w "done(<id>)"`.
+- Array tasks must not append to one shared `experiments.jsonl`/output file
+  concurrently. Use `$LSB_JOBINDEX` in the filename (e.g.
+  `out/$LSB_JOBINDEX.jsonl`) or a per-task directory (`runs/$LSB_JOBID/$LSB_JOBINDEX/`),
+  then merge after the array finishes.
 - Checkpoint every N steps so a kill/requeue is cheap; LSF reruns are not a substitute for app-level checkpoints.

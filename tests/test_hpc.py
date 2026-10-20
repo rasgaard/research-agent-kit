@@ -1,4 +1,6 @@
 """Stubbed tests for bin/hpc — no network, no real SSH, no HPC."""
+from __future__ import annotations
+
 import json
 import os
 import subprocess
@@ -21,17 +23,27 @@ class HpcCliTest(unittest.TestCase):
         self.repo.mkdir()
         self.stub_bin = base / "bin"
         self.stub_bin.mkdir()
+        self.home = base / "home"
+        self.home.mkdir()
         self.log = base / "ssh.log"
+        self.stdin_log = base / "stdin.log"
         (self.stub_bin / "ssh").write_text(textwrap.dedent("""\
             #!/bin/sh
             printf '%s\\n' "$*" >> "$HPC_TEST_LOG"
-            cat >/dev/null 2>&1 || true
+            if [ -n "${HPC_TEST_STDIN:-}" ]; then
+              cat >> "$HPC_TEST_STDIN"
+            else
+              cat >/dev/null 2>&1 || true
+            fi
             case "$*" in
-              *"-O check"*) exit 0 ;;
+              *"-O check"*)
+                [ "${HPC_TEST_DEAD:-0}" = 1 ] && exit 1
+                exit 0 ;;
               *"bsub"*) printf 'Job <123> is submitted to queue <gpua100>.\\n' ;;
               *"bstat"*) printf 'JOBID USER QUEUE JOB_NAME NALLOC STAT\\n' ;;
               *"printf"*) printf 'tester\\n/home/tester\\n' ;;
             esac
+            [ "${HPC_TEST_STALE:-0}" = 1 ] && exit 255
             exit 0
             """))
         (self.stub_bin / "ssh").chmod(0o755)
@@ -54,14 +66,17 @@ class HpcCliTest(unittest.TestCase):
         subprocess.run(["git", *args], cwd=self.repo, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    def hpc(self, *args: str) -> subprocess.CompletedProcess:
+    def hpc(self, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         env = os.environ.copy()
         env.update({
             "HPC_CONFIG": str(self.config),
             "HPC_NO_OPEN": "1",
             "HPC_TEST_LOG": str(self.log),
+            "HPC_TEST_STDIN": str(self.stdin_log),
+            "HOME": str(self.home),
             "PATH": f"{self.stub_bin}{os.pathsep}{env['PATH']}",
         })
+        env.update(extra_env or {})
         return subprocess.run([sys.executable, str(HPC), *args], cwd=self.repo,
                               env=env, text=True, capture_output=True)
 
@@ -118,6 +133,117 @@ class HpcCliTest(unittest.TestCase):
         result = self.hpc("submit", "job.lsf", "--allow-dirty")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("dirty", result.stderr)
+
+    def test_init_detects_existing_dtu_alias(self) -> None:
+        ssh_dir = self.home / ".ssh"
+        ssh_dir.mkdir()
+        (ssh_dir / "config").write_text(
+            "Host dtu\n  HostName login9.hpc.dtu.dk\n  User tester\n")
+        result = self.hpc("init", "--force")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = self.config.read_text()
+        self.assertIn("host = dtu", config)
+        self.assertIn("venv = /work3/{user}/hpc/venvs/{repo}", config)
+        self.assertIn("hpc login", result.stdout)
+
+    def test_init_without_alias_refuses_default(self) -> None:
+        result = self.hpc("init", "--force")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no DTU SSH alias", result.stderr)
+        self.assertIn("Host dtu", result.stderr)
+
+    def test_init_accepts_explicit_ssh_host(self) -> None:
+        result = self.hpc("init", "--force", "--ssh-host", "my-dtu")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("host = my-dtu", self.config.read_text())
+
+    def test_doctor_stale_socket_points_to_login(self) -> None:
+        result = self.hpc("doctor", extra_env={"HPC_TEST_STALE": "1"})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("socket stale", result.stdout)
+        self.assertIn("hpc login", result.stdout)
+        self.assertNotIn("remote user", result.stdout)
+        self.assertNotIn("printf", self.log.read_text())
+
+    def test_doctor_dead_socket_points_to_login(self) -> None:
+        result = self.hpc("doctor", extra_env={"HPC_TEST_DEAD": "1"})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hpc login", result.stdout)
+        self.assertNotIn("remote user", result.stdout)
+        self.assertNotIn("printf", self.log.read_text())
+
+    def test_dry_run_allows_dirty_tree(self) -> None:
+        (self.repo / "train.py").write_text("print('changed')\n")
+        result = self.hpc("submit", "job.lsf", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("HEAD", result.stderr)
+
+    def test_secret_set_writes_env_file(self) -> None:
+        value = Path(self.tmp.name) / "value.txt"
+        value.write_text("sk-test-value\n")
+        result = self.hpc("secret", "set", "OPENROUTER_API_KEY", "--file", str(value))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        written = self.stdin_log.read_text()
+        self.assertIn("OPENROUTER_API_KEY=sk-test-value", written)
+        self.assertIn("chmod 600", self.log.read_text())
+        self.assertNotIn("sk-test-value", result.stdout + result.stderr)
+        self.assertNotIn("sk-test-value", self.log.read_text())
+
+    def test_secret_quotes_values_with_spaces(self) -> None:
+        value = Path(self.tmp.name) / "value.txt"
+        value.write_text("sk test value\n")
+        result = self.hpc("secret", "set", "K", "--file", str(value))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("K='sk test value'", self.stdin_log.read_text())
+        self.assertNotIn("sk test value", self.log.read_text())
+
+    def test_secret_dry_run_hides_value_and_skips_ssh(self) -> None:
+        value = Path(self.tmp.name) / "value.txt"
+        value.write_text("sk-test-value\n")
+        result = self.hpc("secret", "set", "K", "--file", str(value), "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("sk-test-value", result.stdout + result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_sync_env_uses_shared_venv(self) -> None:
+        result = self.hpc("sync-env")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn("uv sync --frozen", log)
+        self.assertIn("/work3/tester/hpc/venvs/proj", log)
+
+    def test_dry_run_renders_env_placeholders(self) -> None:
+        (self.repo / "job.lsf").write_text(
+            "#BSUB -q p1\ncd {{CODE_DIR}}\necho {{VENV}} {{HF_HOME}} {{SECRETS}}\n")
+        self.git("add", "job.lsf")
+        self.git("commit", "-qm", "placeholders")
+        result = self.hpc("submit", "job.lsf", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("/work3/<user>/hpc/venvs/proj", result.stdout)
+        self.assertIn("/work3/<user>/hf", result.stdout)
+        self.assertIn("$HOME/.config/dtu-hpc/secrets.env", result.stdout)
+
+
+class RenderValuesTest(unittest.TestCase):
+    def test_remote_placeholders_use_remote_identity(self) -> None:
+        import runpy
+        import types
+        module = types.SimpleNamespace(**runpy.run_path(str(HPC), run_name="hpc_cli"))
+        values = module.render_values({}, Path("/tmp/proj"), "work", "run", "sha",
+                                      "job", "tester", "/home/tester")
+        self.assertEqual(values["VENV"], "/work3/tester/hpc/venvs/proj")
+        self.assertEqual(values["HF_HOME"], "/work3/tester/hf")
+        self.assertEqual(values["SECRETS"], "$HOME/.config/dtu-hpc/secrets.env")
+
+
+class MergeEnvTest(unittest.TestCase):
+    def test_preserves_comments_and_replaces_key(self) -> None:
+        import runpy
+        import types
+        module = types.SimpleNamespace(**runpy.run_path(str(HPC), run_name="hpc_cli"))
+        text = "# keep me\nA=1\nB=2\n"
+        self.assertEqual(module.merge_env(text, "B", "3"), "# keep me\nA=1\nB=3\n")
+        self.assertEqual(module.merge_env(text, "C", "4"), "# keep me\nA=1\nB=2\nC=4\n")
 
 
 if __name__ == "__main__":

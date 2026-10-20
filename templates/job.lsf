@@ -1,6 +1,7 @@
 #!/bin/sh
-# DTU LSF job template. hpc renders {{CODE_DIR}}, {{RUN_DIR}}, {{SHA}}, {{JOB_NAME}}.
+# DTU LSF job template. hpc renders the placeholders below and env paths.
 # Copy to jobs/<name>.lsf and edit the BSUB block; the CLI refuses a dirty tree.
+# Env placeholders: {{VENV}}, {{HF_HOME}}, {{UV_CACHE}}, {{SECRETS}}.
 
 #BSUB -q gpua100
 #BSUB -J {{JOB_NAME}}
@@ -16,8 +17,10 @@ set -euo pipefail
 cd "{{CODE_DIR}}"
 echo "sha={{SHA}} job=$LSB_JOBID host=$(hostname)"
 
-# Load the stack your project needs; do not rely on the login-node environment.
-# module load python/3.11.7
-# source .venv/bin/activate
+# Load the shared venv built by `hpc sync-env`; do not rebuild per job.
+export PATH="$HOME/.local/bin:$PATH"
+export UV_PROJECT_ENVIRONMENT="{{VENV}}"
+export HF_HOME="{{HF_HOME}}"
+[ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
 
-python3 -u train.py --out "{{RUN_DIR}}/output"
+uv run --frozen --no-sync python -u train.py --out "{{RUN_DIR}}/output"

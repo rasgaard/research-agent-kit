@@ -9,7 +9,7 @@ Rule: **git is the code source of truth; HF (or an explicit path) is the data so
 1. Refuses a dirty tree (or warns with `--allow-dirty`) and resolves `HEAD`.
 2. Streams `git archive --format=tar.gz <sha>` over SSH into
    `/work3/$USER/hpc/<repo>/jobs/<timestamp>-<sha8>/code`.
-3. Renders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}` into the job script and submits it.
+3. Renders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}` into the job script and submits it.
 
 Consequences:
 
@@ -51,24 +51,42 @@ A bucket id looks like `user/name`, which makes the confusion easy. See
 
 ## Python env: one shared uv venv on /work3
 
-Compute nodes have PyPI/HF access (verified on `p1`), but re-downloading torch per job is waste. Keep the venv and caches on scratch and sync only from the committed lock:
+Compute nodes have PyPI/HF access (verified on `p1`), but re-downloading torch per job is waste. `hpc sync-env` ships `HEAD` to `env/<timestamp>-<sha8>/` and runs `uv sync --frozen` on the login node into the configured `venv` (default `/work3/$USER/hpc/venvs/<repo>`). Run it once after `hpc init`, and again whenever `uv.lock` changes. The job uses `{{VENV}}` and `{{UV_CACHE}}` so it does not rebuild.
+
+`examples/hf-smoke/` is the working reference; first sync was ~66 s, subsequent `uv sync` audited 72 packages in 183 ms. The equivalent manual commands (for debugging only) are:
 
 ```sh
 module load python3/3.11.9
 export PATH="$HOME/.local/bin:$PATH"       # uv lives in ~/.local/bin
 export UV_PYTHON_DOWNLOADS=never
 export UV_CACHE_DIR="/work3/$USER/.cache/uv"
-export UV_PROJECT_ENVIRONMENT="/work3/$USER/hpc/venvs/<name>"
+export UV_PROJECT_ENVIRONMENT="/work3/$USER/hpc/venvs/<repo>"
 uv sync --frozen --python "$(command -v python3)"
 uv run --frozen --no-sync python -u train.py
 ```
 
-`examples/hf-smoke/` is the working reference; first sync was ~66 s, subsequent `uv sync` audited 72 packages in 183 ms.
+## Secrets: write remotely, source in the job
+
+Local exports do **not** cross `hpc submit`: it starts a fresh SSH login shell. Store keys on the cluster instead:
+
+```sh
+hpc secret set OPENROUTER_API_KEY     # prompts; or: printf '%s\n' "$KEY" | hpc secret set OPENROUTER_API_KEY
+hpc secret list                        # names only
+```
+
+The file is `~/.config/dtu-hpc/secrets.env` on the cluster, mode 600. Source it from the job, normally near the top:
+
+```sh
+[ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
+python -u train.py
+```
+
+Values never appear in argv, the repo, or the CLI log. `hpc secret set` merges one key and preserves other lines; it does not print the value.
 
 ## Results
 
 - Small metrics → `experiments.jsonl` or Trackio; commit them via a PR.
-- Large artefacts → upload from the HPC job to a private HF repo **or bucket** (write token scoped to that target, stored only on the cluster with mode 600).
+- Large artefacts → upload from the HPC job to a private HF repo **or bucket** (write token scoped to that target, stored on the cluster via `hpc secret set`, mode 600).
 - Per-run manifest (recommended in the job script):
 
 ```json
