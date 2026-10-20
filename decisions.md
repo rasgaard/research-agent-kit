@@ -57,3 +57,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: move everything to `/dtu/p1` (slower venv installs, no benefit for a small tooling repo; rejected); put venv/caches on `/dtu/p1` while code stays on `/work3` (extra split for no gain; rejected).
 - Refs: #25.
 - Tags: hpc, storage, workflow.
+
+## 2026-10-20 — Post-implementation issue status comment is part of delivery
+
+- Context: #27 was implemented and its PR opened, but the issue thread stayed silent until the human explicitly asked for a status update; §1.5 encouraged thread updates without making the post-PR comment a required step.
+- Decision: §1.3 now requires an immediate short issue comment after opening the PR — PR link, what landed, verification, caveats — before reporting back in chat; the pre-review checklist includes it. Contract → v1.3.
+- Alternatives: rely on the PR link/title alone (reviewers lose the issue-thread context and verification summary; rejected); leave it to §1.5's general "intermediate results" guidance (too easy to skip; rejected).
+- Refs: #29.
+- Tags: workflow, github, communication, template.

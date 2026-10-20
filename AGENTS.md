@@ -1,6 +1,6 @@
 # AGENTS.md — reusable research template
 
-Contract v1.2 (2026-10-16).
+Contract v1.3 (2026-10-20).
 
 > Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs). Keep it under ~150 lines: it loads every turn, so read-once material belongs in `skills/`, and stale rules get distilled, not appended.
 
@@ -8,7 +8,7 @@ Contract v1.2 (2026-10-16).
 
 1. **Issue = task.** Human files an issue describing *what* and *why*, with acceptance criteria. Agent may ask clarifying questions before starting. At project start and whenever scope shifts, the agent elicits deployment facts it cannot see (output channel, latency envelope, who judges, what infra exists) — constraints surface over time, so ask early and re-ask on redirection.
 2. **Branch per task.** `git checkout -b <type>/<issue-nr>-<short-slug>` (e.g. `feat/3-log-seeds`). One issue → one branch → one PR. Branch from `main` always; never stack branches on unmerged PRs. If work seems to need an unmerged branch, split smaller or wait for review instead — stacked diffs confuse review, force retargeting, and cause avoidable conflicts. Keep PRs small so review is fast and stacks never need to form. Merged branches are deleted — locally and remote — on a regular pass.
-3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`. The human may grant standing delegation ("merge green routine PRs"); design, data, and threshold decisions always wait for explicit review. One coherent unit of work per PR — never one PR per micro-step; related work shares a branch and a reviewer decision. Review iterations and nits land as commits on the open PR — never as new issues.
+3. **PR = delivery.** Agent opens a PR that closes the issue (`Closes #<nr>`). Human reviews and merges. Agent never pushes directly to `main`. The human may grant standing delegation ("merge green routine PRs"); design, data, and threshold decisions always wait for explicit review. One coherent unit of work per PR — never one PR per micro-step; related work shares a branch and a reviewer decision. Review iterations and nits land as commits on the open PR — never as new issues. Opening the PR is not the end of the loop: immediately post a short issue comment with the PR link, what landed, verification, and caveats — before reporting back in chat. Do not wait to be asked.
 4. **Small steps, batched sensibly.**
 
    - Prefer several small PRs over one large one — but batch the trivial: group units of work that share one verification command and one reviewer decision into a single issue → PR (e.g. the whole bootstrap scaffold ships as one first PR, not one issue per step).
@@ -108,6 +108,7 @@ Checklist before requesting review:
 - [ ] Diff is minimal; no unrelated reformatting
 - [ ] Docs updated (see §1.5)
 - [ ] Agent-authored content carries the 🤖 footer (PR body included)
+- [ ] Issue has a status comment linking the PR (posted immediately after opening it)
 - [ ] Branch cut from freshly pulled `main` (`git log` shows main tip as base)
 - [ ] PR file list read back — only this issue's work, clean `git status`
 
