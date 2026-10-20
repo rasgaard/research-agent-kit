@@ -63,6 +63,17 @@ uv run --frozen --no-sync python -u train.py
 
 - Home: `/zhome/$USER`, quota enforced and backed up. Configs only; large code/cache belongs elsewhere. Some users symlink `.cache`, `repos`, `.vscode-server` into `/work3`.
 - `/work1` and `/work3/$USER`: BeeGFS scratch, fast, **not backed up**. Default for code snapshots, uv venv/cache, and HF cache.
-- `/dtu/p1/$USER`: project NFS scratch (60T class), **not backed up**. Use it for large project data and p1 run outputs; it can be slower for venv installs. Override `remote_root` and `SCRATCH` per project.
+- `/dtu/p1/$USER`: project NFS scratch, **not backed up**. Use it for large project data and p1 run outputs; it can be slower for venv installs. Quota is per user (check below). Override `remote_root` and `SCRATCH` per project.
 - Verify with `df -h` / `readlink -f $HOME`; do not assume `$HOME` itself is a symlink.
 - Source: <https://www.hpc.dtu.dk/?page_id=59>.
+
+## Quotas
+
+Cluster free space is **not** your quota. Check the per-user allotments on the login node:
+
+```sh
+getquota_work3.sh
+getquota_p1.sh
+```
+
+Reports update roughly every 30 minutes. `getquota_work3.sh` breaks usage down by BeeGFS storage pool; check both `used` and `hard`, plus the file-count limit. `getquota_p1.sh` prints one line, e.g. `You are using 271.0G of 500G quota`.
