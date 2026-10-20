@@ -402,7 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
     ensure_parser.add_argument("--timeout", type=int, default=180)
     ensure_parser.set_defaults(func=cmd_ensure)
 
-    shell = sub.add_parser("shell", help="tmux session on the login node")
+    shell = sub.add_parser("shell", help="shared CPU node (linuxsh) in tmux")
     shell.add_argument("--session", default="hpc")
     shell.set_defaults(func=cmd_shell)
 
