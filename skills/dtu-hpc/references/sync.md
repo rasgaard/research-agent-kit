@@ -77,3 +77,13 @@ getquota_p1.sh
 ```
 
 Reports update roughly every 30 minutes. `getquota_work3.sh` breaks usage down by BeeGFS storage pool; check both `used` and `hard`, plus the file-count limit. `getquota_p1.sh` prints one line, e.g. `You are using 271.0G of 500G quota`.
+
+## Growth and cleanup
+
+Every `hpc submit` adds a full `code/` snapshot and a run directory; every `hpc stage` adds an interactive snapshot. There is no automatic deduplication or cleanup yet.
+
+- Cost is the **tracked** repo size, not data: `.git`, venvs, `runs/`, and gitignored data are not shipped. The kit is ~69–293 KB per snapshot; 10k jobs is only ~1–3 GB.
+- Large tracked files are the failure mode: a 100 MB tracked artefact costs 100 MB per submission. Keep data in HF/`/dtu/p1` and gitignore it.
+- Logs, checkpoints, and run outputs usually dominate; `hpc pull` copies them locally but does not remove the remote copy.
+- Before a large sweep: pull results, then remove old `jobs/<run_id>/` and `interactive/<timestamp>-<sha>/` directories manually. Keep the ledger and SHA; code is reproducible from git.
+- A future `hpc clean` should dry-run by default, keep the newest N jobs, and optionally delete only `code/` while preserving logs. Not implemented yet.
