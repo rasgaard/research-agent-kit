@@ -1,0 +1,27 @@
+#!/bin/sh
+#BSUB -q p1
+#BSUB -J {{JOB_NAME}}
+#BSUB -n 4
+#BSUB -gpu "num=1:mode=exclusive_process"
+#BSUB -R "rusage[mem=16GB]"
+#BSUB -M 16GB
+#BSUB -W 0:30
+#BSUB -o {{RUN_DIR}}/logs/%J.out
+#BSUB -e {{RUN_DIR}}/logs/%J.err
+
+set -euo pipefail
+module load python3/3.11.9
+export PATH="$HOME/.local/bin:$PATH"
+export UV_PYTHON_DOWNLOADS=never
+SCRATCH="${SCRATCH:-/work3/$USER}"
+export UV_CACHE_DIR="$SCRATCH/.cache/uv"
+export UV_PROJECT_ENVIRONMENT="$SCRATCH/hpc/venvs/hf-smoke-py311"
+export HF_HOME="$SCRATCH/hf"
+export TOKENIZERS_PARALLELISM=false
+
+cd "{{CODE_DIR}}/examples/hf-smoke"
+echo "sha={{SHA}} job=$LSB_JOBID host=$(hostname)"
+python3 --version
+uv --version
+uv sync --frozen --no-progress --python "$(command -v python3)"
+uv run --frozen --no-sync python -u train.py

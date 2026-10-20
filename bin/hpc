@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+"""Local-first DTU HPC control plane.
+
+Stdlib only. Keeps code on the Mac as the source of truth: every job ships a
+`git archive` snapshot pinned to a SHA, so the HPC side needs no GitHub
+credentials and runs are reproducible.
+"""
+from __future__ import annotations
+
+import argparse
+import configparser
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import NoReturn, Optional
+
+DEFAULT_CONFIG = Path.home() / ".config" / "dtu-hpc" / "config.ini"
+DEFAULT_REMOTE_ROOT = "/work3/{user}/hpc/{repo}"
+GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
+P1_GPU_COMMAND = 'export TERM=${TERM:-xterm-256color}; p1gpush'
+
+
+def die(message: str, code: int = 1) -> NoReturn:
+    print(f"hpc: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, **kwargs)
+
+
+def git(*args: str, cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+    result = run(["git", *args], cwd=cwd, text=True, capture_output=True)
+    if check and result.returncode != 0:
+        die(result.stderr.strip() or f"git {' '.join(args)} failed")
+    return result
+
+
+def repo_root() -> Path:
+    return Path(git("rev-parse", "--show-toplevel").stdout.strip())
+
+
+def git_dir(root: Path) -> Path:
+    return Path(git("rev-parse", "--absolute-git-dir", cwd=root).stdout.strip())
+
+
+def load_config() -> dict[str, str]:
+    config = {"host": "dtu", "remote_root": DEFAULT_REMOTE_ROOT}
+    path = Path(os.environ.get("HPC_CONFIG", str(DEFAULT_CONFIG))).expanduser()
+    if path.exists():
+        parser = configparser.ConfigParser()
+        parser.read(path)
+        if parser.has_section("hpc"):
+            for key, value in parser.items("hpc"):
+                config[key] = value
+    return config
+
+
+def ssh(host: str, args: list[str], input: Optional[bytes] = None, text: bool = True,
+        tty: bool = False, check: bool = False) -> subprocess.CompletedProcess:
+    cmd = ["ssh", *(["-t"] if tty else []), host, *args]
+    kwargs = {"input": input} if input is not None else {"stdin": subprocess.DEVNULL}
+    result = run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, **kwargs)
+    if check and result.returncode != 0:
+        err = result.stderr if text else result.stderr.decode(errors="replace")
+        die(err.strip() or f"ssh {host} failed")
+    return result
+
+
+def ssh_login(host: str, script: str, args: Optional[list[str]] = None,
+              **kwargs) -> subprocess.CompletedProcess:
+    """Run a remote script in a login shell so LSF (bsub/bstat/bpeek) is on PATH."""
+    command = "bash -lc " + shlex.quote(script)
+    if args:
+        command += " hpc " + " ".join(shlex.quote(arg) for arg in args)
+    return ssh(host, [command], **kwargs)
+
+
+def socket_alive(host: str) -> bool:
+    return run(["ssh", "-O", "check", host], stdin=subprocess.DEVNULL,
+               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
+def ensure(host: str, timeout: int = 180) -> None:
+    if socket_alive(host):
+        return
+    if os.environ.get("HPC_NO_OPEN") == "1":
+        die(f"no SSH master for {host}; run: ssh -M -N -f {host}")
+    command = f"ssh -M -N -f {shlex.quote(host)}"
+    if sys.platform == "darwin":
+        script = command.replace("\\", "\\\\").replace('"', '\\"')
+        run(["osascript",
+             "-e", 'tell application "Terminal" to activate',
+             "-e", f'tell application "Terminal" to do script "{script}"'])
+    else:
+        print(f"hpc: authenticate in another terminal: {command}", file=sys.stderr)
+    for _ in range(timeout):
+        if socket_alive(host):
+            print(f"hpc: SSH master for {host} is up", file=sys.stderr)
+            return
+        time.sleep(1)
+    die(f"authentication did not complete; run: {command}")
+
+
+def remote_env(host: str) -> tuple[str, str]:
+    result = ssh(host, ['printf "%s\\n%s\\n" "$USER" "$HOME"'], check=True)
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) < 2:
+        die("could not read $USER/$HOME on the remote host")
+    return lines[0], lines[1]
+
+
+def remote_root(host: str, config: dict[str, str], root: Path) -> str:
+    user, home = remote_env(host)
+    return config["remote_root"].format(user=user, home=home, repo=root.name)
+
+
+def ledger_path(root: Path) -> Path:
+    return git_dir(root) / "hpc" / "jobs.jsonl"
+
+
+def append_ledger(root: Path, entry: dict) -> None:
+    path = ledger_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
+def read_ledger(root: Path) -> list[dict]:
+    path = ledger_path(root)
+    if not path.exists():
+        return []
+    entries = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries
+
+
+def find_job(root: Path, job_id: str) -> Optional[dict]:
+    for entry in reversed(read_ledger(root)):
+        if str(entry.get("job_id")) == str(job_id):
+            return entry
+    return None
+
+
+def render(text: str, values: dict[str, str]) -> str:
+    for key, value in values.items():
+        text = text.replace("{{" + key + "}}", value)
+    return text
+
+
+def extract_queue(text: str) -> str:
+    match = re.search(r"^#BSUB\s+-q\s+(\S+)", text, re.MULTILINE)
+    return match.group(1) if match else "default"
+
+
+def apply_queue(text: str, queue: Optional[str]) -> str:
+    if not queue:
+        return text
+    if re.search(r"^#BSUB\s+-q\s+\S+", text, re.MULTILINE):
+        return re.sub(r"^#BSUB\s+-q\s+\S+", f"#BSUB -q {queue}", text,
+                      count=1, flags=re.MULTILINE)
+    lines = text.splitlines()
+    index = 1 if lines and lines[0].startswith("#!") else 0
+    lines.insert(index, f"#BSUB -q {queue}")
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+def cmd_login(host: str, _args: argparse.Namespace) -> int:
+    ensure(host)
+    print(f"hpc: authenticated to {host} (multiplexed)")
+    return 0
+
+
+def cmd_ensure(host: str, args: argparse.Namespace) -> int:
+    ensure(host, timeout=args.timeout)
+    return 0
+
+
+def cmd_shell(host: str, args: argparse.Namespace) -> int:
+    ensure(host)
+    print("hpc: shared CPU node via linuxsh (not the login node); tmux session "
+          f"'{args.session}'", file=sys.stderr)
+    return ssh_login(host, 'tmux new -A -s "$1" linuxsh', [args.session],
+                     tty=True).returncode
+
+
+def cmd_gpu(host: str, args: argparse.Namespace) -> int:
+    ensure(host)
+    session = f"gpu-{args.kind}"
+    if args.kind == "p1":
+        print(f"hpc: p1gpush (2 shared H100s; short tests only) in tmux '{session}'",
+              file=sys.stderr)
+        return ssh_login(host, 'tmux new -A -s "$1" bash -lc "$2"',
+                         [session, P1_GPU_COMMAND], tty=True).returncode
+    command = GPU_NODES[args.kind]
+    print(f"hpc: {command} (shared node; short tests only) in tmux '{session}'", file=sys.stderr)
+    return ssh_login(host, 'tmux new -A -s "$1" "$2"', [session, command],
+                     tty=True).returncode
+
+
+def cmd_stage(host: str, args: argparse.Namespace) -> int:
+    root = repo_root()
+    dirty = git("status", "--porcelain", cwd=root).stdout.strip()
+    if dirty and not args.allow_dirty:
+        die("working tree is dirty; commit (or pass --allow-dirty) before staging")
+    if dirty:
+        print("hpc: warning: staging HEAD; uncommitted edits are not shipped", file=sys.stderr)
+    sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
+    ensure(host)
+    base = remote_root(host, load_config(), root)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    destination = f"{base}/interactive/{stamp}-{sha[:8]}"
+    ssh(host, [f"mkdir -p {shlex.quote(destination)}"], check=True)
+    archive = subprocess.Popen(["git", "archive", "--format=tar.gz", sha], cwd=root,
+                               stdout=subprocess.PIPE)
+    extract = run(["ssh", host, f"tar -xzf - -C {shlex.quote(destination)}"],
+                  stdin=archive.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    archive.stdout.close()
+    archive.wait()
+    if archive.returncode != 0 or extract.returncode != 0:
+        die(extract.stderr.decode(errors="replace").strip() or "failed to stage code")
+    current = f"{base}/interactive/current"
+    ssh(host, [f"ln -sfn {shlex.quote(destination)} {shlex.quote(current)}"], check=True)
+    print(f"hpc: staged {sha[:8]} → {destination}")
+    print(f"hpc: current → {current}")
+    print("hpc: next → hpc shell        (CPU, linuxsh)")
+    print("hpc:        hpc gpu a100     (GPU, shared debug node)")
+    print(f"hpc:        cd {current} && python -u your_script.py")
+    return 0
+
+
+def cmd_submit(host: str, args: argparse.Namespace) -> int:
+    root = repo_root()
+    script = Path(args.script)
+    if not script.exists():
+        die(f"job script not found: {script}")
+    dirty = git("status", "--porcelain", cwd=root).stdout.strip()
+    if dirty and not args.allow_dirty:
+        die("working tree is dirty; commit (or push a WIP commit) before submitting")
+    if dirty:
+        print("hpc: warning: submitting a dirty tree; the snapshot is HEAD, not your edits",
+              file=sys.stderr)
+    sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
+    branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=root).stdout.strip()
+    if branch == "HEAD" and not args.allow_dirty:
+        die("detached HEAD; check out a branch before submitting")
+
+    job_name = args.name or script.stem
+    source = script.read_text(encoding="utf-8")
+    if args.dry_run:
+        stamps = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        run_id = f"{stamps}-{sha[:8]}"
+        base = load_config()["remote_root"].format(
+            user="<user>", home="<home>", repo=root.name)
+        workdir = f"{base}/jobs/{run_id}/code"
+        run_dir = f"{base}/jobs/{run_id}"
+        rendered = apply_queue(render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
+                                               "SHA": sha, "JOB_NAME": job_name}), args.queue)
+        print(f"hpc: git archive --format=tar.gz {sha} | ssh {host} tar -xzf - -C {workdir}")
+        print(f"hpc: ssh {host} 'cat > {run_dir}/job.lsf'")
+        print(f"hpc: ssh {host} 'cd {run_dir} && bsub < job.lsf'")
+        print("--- rendered job script ---")
+        print(rendered)
+        return 0
+
+    ensure(host)
+    config = load_config()
+    base = remote_root(host, config, root)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = f"{stamp}-{sha[:8]}"
+    run_dir = f"{base}/jobs/{run_id}"
+    workdir = f"{run_dir}/code"
+    logdir = f"{run_dir}/logs"
+    ssh(host, [f"mkdir -p {shlex.quote(workdir)} {shlex.quote(logdir)}"], check=True)
+
+    archive = subprocess.Popen(["git", "archive", "--format=tar.gz", sha], cwd=root,
+                               stdout=subprocess.PIPE)
+    extract = run(["ssh", host, f"tar -xzf - -C {shlex.quote(workdir)}"],
+                  stdin=archive.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    archive.stdout.close()
+    archive.wait()
+    if archive.returncode != 0 or extract.returncode != 0:
+        die(extract.stderr.decode(errors="replace").strip() or "failed to ship code snapshot")
+
+    rendered = apply_queue(render(source, {"CODE_DIR": workdir, "RUN_DIR": run_dir,
+                                            "SHA": sha, "JOB_NAME": job_name}), args.queue)
+    remote_script = f"{run_dir}/job.lsf"
+    ssh(host, [f"cat > {shlex.quote(remote_script)}"], input=rendered, check=True)
+    result = ssh_login(host, 'cd "$1" && bsub < "$2"', [run_dir, remote_script],
+                       check=True)
+    match = re.search(r"Job <(\d+)>", result.stdout + result.stderr)
+    if not match:
+        die(f"could not parse job id from bsub output:\n{result.stdout}{result.stderr}")
+    job_id = int(match.group(1))
+    entry = {
+        "job_id": job_id,
+        "run_id": run_id,
+        "sha": sha,
+        "branch": branch,
+        "script": str(script),
+        "queue": extract_queue(rendered),
+        "run_dir": run_dir,
+        "workdir": workdir,
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+    }
+    append_ledger(root, entry)
+    print(f"hpc: submitted job {job_id} ({entry['queue']}) from {branch}@{sha[:8]}")
+    print(f"hpc: run dir {run_dir}")
+    print(f"hpc: next → hpc logs {job_id} -f   |   hpc pull {job_id}")
+    return 0
+
+
+def cmd_status(host: str, args: argparse.Namespace) -> int:
+    ensure(host)
+    script = ('if command -v bstat >/dev/null 2>&1; then bstat "$@"; '
+              'else bjobs -w "$@"; fi')
+    result = ssh_login(host, script, [args.job_id] if args.job_id else [], check=False)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def cmd_logs(host: str, args: argparse.Namespace) -> int:
+    ensure(host)
+    root = repo_root()
+    entry = find_job(root, args.job_id)
+    if entry:
+        out = f"{entry['run_dir']}/logs/{args.job_id}.out"
+        err = f"{entry['run_dir']}/logs/{args.job_id}.err"
+        if args.follow:
+            return ssh_login(host, 'tail -F "$1" "$2"', [out, err], tty=True).returncode
+        return ssh_login(host, 'tail -n 50 "$1" "$2"', [out, err], check=False).returncode
+    if args.follow:
+        die(f"job {args.job_id} not in the local ledger; cannot locate its log")
+    return ssh_login(host, 'exec bpeek "$1"', [args.job_id], check=False).returncode
+
+
+def cmd_pull(host: str, args: argparse.Namespace) -> int:
+    ensure(host)
+    root = repo_root()
+    entry = find_job(root, args.job_id) if args.job_id else None
+    if not entry:
+        die(f"job {args.job_id or ''} not in the local ledger; pass a job id from hpc submit")
+    destination = Path(args.dest).expanduser() if args.dest else root / "runs" / entry["run_id"]
+    destination.mkdir(parents=True, exist_ok=True)
+    result = run(["rsync", "-az", "--partial",
+                  f"{host}:{entry['run_dir']}/", f"{destination}/"])
+    if result.returncode != 0:
+        die(f"rsync failed with exit code {result.returncode}")
+    print(f"hpc: pulled {entry['run_dir']} → {destination}")
+    return 0
+
+
+def cmd_doctor(host: str, _args: argparse.Namespace) -> int:
+    root = repo_root()
+    config = load_config()
+    checks: list[tuple[str, bool, str]] = []
+    for name in ("git", "ssh", "rsync"):
+        checks.append((name, bool(shutil_which(name)), "local binary"))
+    checks.append(("ssh master", socket_alive(host), f"ssh -O check {host}"))
+    if socket_alive(host):
+        user, _home = remote_env(host)
+        checks.append(("remote user", bool(user), user))
+        base = remote_root(host, config, root)
+        result = ssh(host, [f"test -d {shlex.quote(base)} || mkdir -p {shlex.quote(base)}"])
+        checks.append((f"remote root {base}", result.returncode == 0, "writable"))
+        for name in ("bsub", "bstat", "rsync"):
+            probe = ssh_login(host, f"command -v {name} >/dev/null 2>&1")
+            checks.append((f"remote {name}", probe.returncode == 0, "on PATH"))
+    for label, ok, note in checks:
+        print(f"{'ok  ' if ok else 'FAIL'}  {label:<28} {note}")
+    return 0 if all(ok for _, ok, _ in checks) else 1
+
+
+def shutil_which(name: str) -> Optional[str]:
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(directory) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="hpc", description="DTU LSF control plane")
+    parser.add_argument("--host", default=None, help="SSH host alias (default: config or 'dtu')")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    login = sub.add_parser("login", help="establish/reuse the SSH master socket")
+    login.set_defaults(func=cmd_login)
+
+    ensure_parser = sub.add_parser("ensure", help="make sure the master socket is alive")
+    ensure_parser.add_argument("--timeout", type=int, default=180)
+    ensure_parser.set_defaults(func=cmd_ensure)
+
+    shell = sub.add_parser("shell", help="shared CPU node (linuxsh) in tmux")
+    shell.add_argument("--session", default="hpc")
+    shell.set_defaults(func=cmd_shell)
+
+    gpu = sub.add_parser("gpu", help="interactive GPU node in tmux")
+    gpu.add_argument("kind", choices=sorted([*GPU_NODES, "p1"]))
+    gpu.set_defaults(func=cmd_gpu)
+
+    stage = sub.add_parser("stage", help="ship HEAD to /work3 for interactive testing")
+    stage.add_argument("--allow-dirty", action="store_true")
+    stage.set_defaults(func=cmd_stage)
+
+    submit = sub.add_parser("submit", help="ship HEAD and submit an LSF job")
+    submit.add_argument("script")
+    submit.add_argument("--name", default=None)
+    submit.add_argument("--queue", default=None, help="override the script's #BSUB -q")
+    submit.add_argument("--allow-dirty", action="store_true")
+    submit.add_argument("--dry-run", action="store_true")
+    submit.set_defaults(func=cmd_submit)
+
+    status = sub.add_parser("status", help="bstat/bjobs")
+    status.add_argument("job_id", nargs="?")
+    status.set_defaults(func=cmd_status)
+
+    logs = sub.add_parser("logs", help="bpeek or follow the job log")
+    logs.add_argument("job_id")
+    logs.add_argument("-f", "--follow", action="store_true")
+    logs.set_defaults(func=cmd_logs)
+
+    pull = sub.add_parser("pull", help="rsync a run directory back")
+    pull.add_argument("job_id", nargs="?")
+    pull.add_argument("--dest", default=None)
+    pull.set_defaults(func=cmd_pull)
+
+    doctor = sub.add_parser("doctor", help="check local/remote prerequisites")
+    doctor.set_defaults(func=cmd_doctor)
+    return parser
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    host = args.host or load_config().get("host", "dtu")
+    return args.func(host, args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

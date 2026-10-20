@@ -41,3 +41,19 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: relocating the format blocks into `skills/` (the audit's main cut — bigger change, deferred); keeping the checklist self-contained (refs follow the file's existing dedup pattern, e.g. §5's "(see §1.2)"); acting on the remaining audit findings ("green", approval-gate lists, `experiments.jsonl` bootstrap gap) — out of scope, candidates for follow-up issues.
 - Refs: #23.
 - Tags: template, cleanup, versioning.
+
+## 2026-10-19 — DTU HPC: local-first control plane, one auth per session
+
+- Context: managed work Mac (SSH/CLI only, no VPN/always-on relay) and a flaky connection made login-node work painful; DTU requires key + key passphrase + DTU password outside campus, so unattended passwordless access is impossible.
+- Decision: add `bin/hpc` + `skills/dtu-hpc` to the kit. Code ships as an immutable `git archive` snapshot at a SHA (no HPC GitHub credentials); ControlMaster/ControlPersist gives one auth per session; batch jobs are LSF-owned and survive drops; interactive work lives in `tmux`; data via revision-pinned HF with a `/work3` cache.
+- Alternatives: always-on DTU relay/Tailscale (needs hardware + policy approval; rejected for now); remote git clone + deploy keys (extra secret surface; rejected); rsync code trees/Syncthing (drift; rejected); storing the DTU password for autossh (security regression; rejected).
+- Refs: #25.
+- Tags: hpc, workflow, auth, sync.
+
+## 2026-10-20 — HPC storage: BeeGFS default, project NFS override
+
+- Context: `$HOME` is `/zhome` with selective symlinks (`.cache`, `repos`, `.vscode-server`) into `/work3`; `/dtu/p1/roraa` is a 60T project scratch already holding `patientsim-scratch` and `ppl-lies-scratch`.
+- Decision: keep the kit's default on `/work3` (BeeGFS is faster for code snapshots and uv venvs, and the kit is small); reserve `/dtu/p1` for data-heavy projects. `remote_root` and the example job's `SCRATCH` are overridable per project.
+- Alternatives: move everything to `/dtu/p1` (slower venv installs, no benefit for a small tooling repo; rejected); put venv/caches on `/dtu/p1` while code stays on `/work3` (extra split for no gain; rejected).
+- Refs: #25.
+- Tags: hpc, storage, workflow.
