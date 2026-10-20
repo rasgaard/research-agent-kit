@@ -33,7 +33,7 @@ hpc doctor                 # local + remote prerequisites
 hpc stage                  # ship HEAD to /work3/.../interactive/current
 hpc shell                  # linuxsh shared CPU node, in tmux
 hpc gpu a100|v100|sxm2     # shared GPU node, in tmux (short tests only)
-hpc gpu p1                 # p1i Hopper via direct bsub (p1gpush wrapper is broken)
+hpc gpu p1                 # p1gpush (2 shared H100s)
 hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty]
 hpc status [id]            # bstat (falls back to bjobs)
 hpc logs <id> [-f]         # tail the run log (bpeek fallback for unledgered jobs)

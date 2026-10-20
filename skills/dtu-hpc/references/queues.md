@@ -44,7 +44,8 @@ Request: `#BSUB -gpu "num=1:mode=exclusive_process"`. Extras: `-R "select[gpu32g
 - Over-requesting memory/walltime delays scheduling; under-requesting gets the job killed.
 - Use `-M` (per-process kill limit) *and* `-R rusage` (scheduling request).
 - `python -u` for unbuffered logs so `bpeek` is useful.
-- `p1` batch supports `-W`; the `p1i` interactive queue rejects it. `p1gpush` currently fails with `Invalid syntax for option -env` on this LSF; `hpc gpu p1` submits the equivalent `bsub -q p1i ... -Is` directly.
+- `p1` batch supports `-W`; the `p1i` interactive queue rejects it.
+- `p1gpush` works, but it passes `TERM` via `-env`; if `TERM` is unset (e.g. bare `ssh -tt`), LSF rejects it. `hpc gpu p1` exports a fallback `TERM` and requests 2 shared H100s, matching the wrapper.
 
 ## Managing jobs
 

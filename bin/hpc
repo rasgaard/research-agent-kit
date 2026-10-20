@@ -23,11 +23,7 @@ from typing import NoReturn, Optional
 DEFAULT_CONFIG = Path.home() / ".config" / "dtu-hpc" / "config.ini"
 DEFAULT_REMOTE_ROOT = "/work3/{user}/hpc/{repo}"
 GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
-P1_GPU_COMMAND = (
-    'bsub -q p1i -app h100app -gpu "num=1:mode=shared" -n 4 '
-    '-R "rusage[mem=16GB] span[hosts=1]" -M 16GB '
-    '-Is -J hpc-p1 "export TERM=xterm; exec /bin/bash -l"'
-)
+P1_GPU_COMMAND = 'export TERM=${TERM:-xterm-256color}; p1gpush'
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -202,7 +198,7 @@ def cmd_gpu(host: str, args: argparse.Namespace) -> int:
     ensure(host)
     session = f"gpu-{args.kind}"
     if args.kind == "p1":
-        print(f"hpc: p1i interactive H100 (shared; short tests only) in tmux '{session}'",
+        print(f"hpc: p1gpush (2 shared H100s; short tests only) in tmux '{session}'",
               file=sys.stderr)
         return ssh_login(host, 'tmux new -A -s "$1" bash -lc "$2"',
                          [session, P1_GPU_COMMAND], tty=True).returncode
