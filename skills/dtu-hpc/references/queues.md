@@ -30,6 +30,53 @@ replacement queue, and stay there. Do not rotate through `gpua100`/`gpua40`/`gpu
 free-GPU counts, and do not kill a running job to “improve” its queue position. If the
 situation is ambiguous, wait or ask; a queue change is not a routine tuning knob.
 
+## One job vs chunked vs array
+
+**Default to one job with an internal loop.** One job holds a single allocation for its whole
+`-W`; an array is N independent jobs, each with its own queue wait, and LSF does not guarantee
+they are co-scheduled. Arrays are a throughput tool, not a way to reserve a node for the whole
+sweep.
+
+| Workload shape | Default | Why |
+|---|---|---|
+| Total fits one job within walltime; units share setup/model load | **One job, internal loop** | one queue entry, stable allocation, setup paid once |
+| Total exceeds walltime; units are short or setup is expensive | **Roughly 2–8 chunk jobs**, each looping over its units | fewer queue entries, holds each allocation for a meaningful block |
+| Many independent units, each substantial; parallel throughput is the point | **Array**, capped with `%K` | shorter per-element walltime can backfill; failures are isolated |
+| Units must share one node/GPUs, run in order, or are tiny | **Do not array** | no co-scheduling, startup overhead, shared-memory contention |
+
+Decide in this order:
+
+1. Estimate total GPU/CPU-hours. Does it fit one job under the queue walltime with
+   roughly 20–30% headroom? → **one job**.
+2. If not, can you split it into a few chunks that each fit? → **chunk jobs**; checkpoint
+   between units so a walltime kill loses one unit, not the whole chunk.
+3. Only if the chunks are still too coarse or you need parallel throughput → **array**, with
+   a concurrency cap.
+4. If units are tiny, few, ordered, or need one node/multiple GPUs → **stay with one job**.
+
+Rules:
+
+- **Cap arrays.** `#BSUB -J "name[1-N]%K"`; choose `K` from the resources you can fairly use,
+  not the size of the sweep. A large uncapped array crowds a shared queue and may hit
+  per-user limits.
+- **Chunk before arraying.** 100 short units → 4–8 chunk jobs, not 100 elements; 100 long
+  units → array with a cap. On `p1`, an array of 1-GPU elements can occupy multiple project
+  nodes, so cap it deliberately.
+- **Do not pay setup N times.** If each element loads a large model or dataset, loop inside a
+  chunk instead.
+- **One node/multiple GPUs → one job.** Use `-n` and `num=2` in a single job; array elements
+  may land on different nodes.
+- **Checkpoint every unit** in either shape; an array element is not a checkpoint. Array tasks
+  must write per-task files (`out/$LSB_JOBINDEX.jsonl` or
+  `runs/$LSB_JOBID/$LSB_JOBINDEX/`), never append to one shared file concurrently.
+- **State the choice** in the issue/PR: one job, chunked, or array; the concurrency cap; and
+  why.
+
+Rules of thumb, not hard limits: under about one GPU-day total, prefer one job; several
+GPU-days, chunk first; array only when the chunks are still too coarse or parallel throughput
+matters. A single long job may wait longer for a contiguous slot than short array elements,
+which can backfill — choose based on total work and latency, not just queue position.
+
 ## API-bound jobs do not need a GPU
 
 If the job only calls an external API (an LLM judge or student) and does any
