@@ -13,9 +13,10 @@ set -euo pipefail
 module load python3/3.11.9
 export PATH="$HOME/.local/bin:$PATH"
 export UV_PYTHON_DOWNLOADS=never
-export UV_CACHE_DIR="/work3/$USER/.cache/uv"
-export UV_PROJECT_ENVIRONMENT="/work3/$USER/hpc/venvs/hf-smoke-py311"
-export HF_HOME="/work3/$USER/hf"
+SCRATCH="${SCRATCH:-/work3/$USER}"
+export UV_CACHE_DIR="$SCRATCH/.cache/uv"
+export UV_PROJECT_ENVIRONMENT="$SCRATCH/hpc/venvs/hf-smoke-py311"
+export HF_HOME="$SCRATCH/hf"
 export TOKENIZERS_PARALLELISM=false
 
 cd "{{CODE_DIR}}/examples/hf-smoke"
