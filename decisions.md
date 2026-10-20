@@ -65,3 +65,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: rely on the PR link/title alone (reviewers lose the issue-thread context and verification summary; rejected); leave it to §1.5's general "intermediate results" guidance (too easy to skip; rejected).
 - Refs: #29.
 - Tags: workflow, github, communication, template.
+
+## 2026-10-20 — HPC queue selection: p1 by default, no queue-hopping
+
+- Context: an agent killed pending jobs on `p1` and `gpua40` to chase a shorter “jobs ahead” snapshot on `gpua10`; queue-depth estimates are noisy, the shuffle loses position, and the user prefers one queue unless there is a real reason.
+- Decision: the `dtu-hpc` skill defaults GPU batch work to `p1`. Switch only for explicit user instruction or a hard resource mismatch (GPU model/memory, walltime, access/quota), document the reason once, and make at most one deliberate switch. Do not kill pending/running jobs solely to chase a shorter queue.
+- Alternatives: pick the queue with the shortest estimated wait each time (noisy and churn-heavy; rejected); always use the fastest hardware queue regardless of fit (wastes scarce resources; rejected); leave it implicit (the observed over-indexing recurs; rejected).
+- Refs: #31.
+- Tags: hpc, queues, workflow, guardrails.

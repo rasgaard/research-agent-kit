@@ -12,6 +12,24 @@ Sources: <https://www.hpc.dtu.dk/?page_id=2759>, <https://www.hpc.dtu.dk/?page_i
 
 Interactive nodes are the debug queue; batch is never used to discover that a job crashes at import.
 
+## Queue selection: `p1` by default
+
+Use **one** GPU batch queue for a task, normally `p1`. Queue-depth snapshots are a weak signal:
+`bstat` pending counts, `classstat` load, and `showstart` ETAs fluctuate and often do not
+predict when your job starts. Killing a pending job to chase a shorter queue loses your
+position and adds scheduler churn; the next snapshot can reverse the picture.
+
+Switching is justified only by:
+
+- **Explicit user instruction** — the user asked for another queue.
+- **A hard resource mismatch** — `p1` cannot run the job (GPU model or memory, walltime,
+  project access/quota), or the job requires a queue-specific feature.
+
+When a switch is justified, state the reason once in the issue/PR, submit once to the
+replacement queue, and stay there. Do not rotate through `gpua100`/`gpua40`/`gpua10` based on
+free-GPU counts, and do not kill a running job to “improve” its queue position. If the
+situation is ambiguous, wait or ask; a queue change is not a routine tuning knob.
+
 ## API-bound jobs do not need a GPU
 
 If the job only calls an external API (an LLM judge or student) and does any
