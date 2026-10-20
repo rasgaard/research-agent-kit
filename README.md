@@ -13,7 +13,7 @@ skills/research-init/        # opencode skill: "start a new research project"
 skills/dtu-hpc/              # optional: DTU LSF workflow (local-first, SHA-pinned jobs)
   SKILL.md                   # commands, guardrails, re-auth protocol
   references/                # auth, sync, queues — verified DTU docs
-bin/hpc                      # stdlib CLI: login/shell/gpu/submit/status/logs/pull
+bin/hpc                      # stdlib CLI: init/login/sync-env/shell/gpu/submit/status/logs/pull/secret
 examples/hf-smoke/           # uv + torch + transformers + datasets p1 job (verified)
 templates/                   # LSF job + smoke templates, ssh_config, config.ini
 tests/test_hpc.py            # stubbed CLI tests (no network)
@@ -40,7 +40,7 @@ Then quit and restart opencode (config-time files load at startup only). `~/.loc
 
 Local-first workflow for DTU's LSF cluster: edit/test on the Mac, ship an immutable `git archive` snapshot at a SHA, run under LSF, pull results. No GitHub credentials or git clone on the cluster.
 
-- **Auth:** outside DTU requires key + key passphrase + DTU password, so fully unattended access is impossible. `ControlMaster`/`ControlPersist` gives **one auth per session**; jobs survive disconnects. The DTU password is never stored.
+- **Auth:** outside DTU requires key + key passphrase + DTU password, so fully unattended access is impossible. `ControlMaster`/`ControlPersist` gives **one auth per session**; jobs survive disconnects. The DTU password is never stored. `hpc init` writes the config; `hpc doctor` never prompts.
 - **Queues:** local CPU smoke → interactive GPU (`a100sh`/`voltash`/`sxm2sh`/`p1i`, in `tmux`) → batch (`gpua100`, `gpul40s`, `gpuv100`, `p1`, …).
 - **Data:** private HF repos pinned by revision (or buckets via `hf sync` / `hf buckets cp`), cached in `/work3/$USER/hf`; large project data can live in `/dtu/p1/$USER` (P1 scratch) via `SCRATCH`; results via `hpc pull` + small metrics in git.
 - **Quotas:** cluster free space is not your allotment; run `getquota_work3.sh` and `getquota_p1.sh` on the login node.
@@ -48,9 +48,10 @@ Local-first workflow for DTU's LSF cluster: edit/test on the Mac, ship an immuta
 ```bash
 cp templates/ssh_config ~/.ssh/config.d/dtu     # then edit User/HostName; include it from ~/.ssh/config
 ssh-add --apple-use-keychain ~/.ssh/gbar
-cp templates/config.ini ~/.config/dtu-hpc/config.ini   # optional; defaults work
+hpc init                        # detect the DTU alias; write ~/.config/dtu-hpc/config.ini
+hpc login                       # one Terminal auth for this session
+hpc sync-env                    # once in a project with uv.lock; build the shared venv
 hpc doctor
-hpc login
 hpc stage                       # HEAD → /work3/.../interactive/current
 hpc shell                       # CPU shared node (linuxsh), or: hpc gpu a100|p1
 hpc submit templates/smoke.lsf --dry-run
@@ -58,6 +59,8 @@ hpc submit templates/smoke.lsf
 hpc logs <job-id> -f
 hpc pull <job-id>
 ```
+
+Set a job secret without putting it in argv or the repo (prompts, or pipe via stdin; written mode 600 on the cluster): `hpc secret set OPENROUTER_API_KEY`.
 
 See `skills/dtu-hpc/` for the full procedure and guardrails.
 

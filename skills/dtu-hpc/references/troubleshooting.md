@@ -69,6 +69,44 @@ cells done.
 completed cells. Re-submit the same command; do not rely on LSF requeue. Keep
 per-cell work small enough that a kill loses at most one cell.
 
+## API key works locally but is missing in the job
+
+**Symptom:** `export OPENROUTER_API_KEY=...` works in a local shell, then the
+job sees an empty variable or fails auth.
+
+**Cause:** `hpc submit` opens a fresh SSH login shell. Local environment vars do
+not cross; only the submitted script and its remote files travel.
+
+**Fix:** store the key on the cluster and source it in the job:
+
+```sh
+hpc secret set OPENROUTER_API_KEY
+# job script:
+[ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
+```
+
+Never pass the value on the command line or commit it. If the file exists but is
+not mode 600, `hpc doctor` flags it; fix with `chmod 600 ~/.config/dtu-hpc/secrets.env`
+on the cluster.
+
+## `hpc doctor` says the socket is stale
+
+**Symptom:** `ssh -O check` returns success, but remote probes hang or fail with
+`Permission denied`.
+
+**Cause:** the ControlMaster process outlived its authenticated session.
+
+**Fix:** run `hpc login` and complete the DTU password prompt in the Terminal.
+Do not retry `hpc doctor`; it deliberately never prompts.
+
+## `hpc sync-env` fails on `uv sync --frozen`
+
+**Symptom:** the venv is missing or `uv` reports the lock is out of date.
+
+**Fix:** commit the updated `uv.lock`, then rerun `hpc sync-env` (it ships
+`HEAD`). Do not run an unfrozen `uv sync` in the job; that makes runs
+non-reproducible and races other jobs using the shared venv.
+
 ## Logs are empty until the job ends
 
 Use `python -u` (unbuffered). `bpeek` and `hpc logs -f` then show progress.

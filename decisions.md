@@ -57,3 +57,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: move everything to `/dtu/p1` (slower venv installs, no benefit for a small tooling repo; rejected); put venv/caches on `/dtu/p1` while code stays on `/work3` (extra split for no gain; rejected).
 - Refs: #25.
 - Tags: hpc, storage, workflow.
+
+## 2026-10-20 — HPC first-run: detect the SSH alias, store secrets remotely, sync one venv
+
+- Context: the first real `dtu-hpc` use hit avoidable friction: config defaulted to an alias the install never created, `doctor` could prompt while checking a stale master, local API-key exports did not cross `hpc submit`, and the shared venv path was undocumented.
+- Decision: `hpc init` detects an existing DTU `Host`/`HostName` in `~/.ssh/config` (or accepts `--ssh-host`) and refuses to invent a broken `dtu` default; `hpc doctor` uses `BatchMode` and reports a dead/stale socket without prompting; `hpc secret set NAME` writes `~/.config/dtu-hpc/secrets.env` on the cluster via stdin with mode 600; `hpc sync-env` ships `HEAD` and runs `uv sync --frozen` into the configured shared venv; jobs render `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, and `{{SECRETS}}`.
+- Alternatives: keep the `dtu` config default with a warning (still fails first-run; rejected); rely on local env forwarding (does not cross SSH; rejected); store secrets in argv or the repo (leaks; rejected); rebuild the venv per job (wasteful; rejected).
+- Refs: #27.
+- Tags: hpc, ux, auth, secrets, venv.
