@@ -7,7 +7,7 @@ Sources: <https://www.hpc.dtu.dk/?page_id=2759>, <https://www.hpc.dtu.dk/?page_i
 | Tier | Where | Use for | Lifetime |
 |---|---|---|---|
 | Local CPU | Mac | unit tests, 10-step run, shape/NaN checks | seconds |
-| Interactive GPU | `a100sh`, `voltash`, `sxm2sh` (shared, in `tmux`) | import/CUDA check, one forward/backward, profiling | minutes |
+| Interactive GPU | `a100sh`, `voltash`, `sxm2sh`, `p1i` (shared, in `tmux`) | import/CUDA check, one forward/backward, profiling | minutes |
 | Batch GPU/CPU | `gpua100`, `gpul40s`, `gpuv100`, `gpua10`, `gpua40`, `hpc` | real runs, sweeps | GPU ≤24 h, CPU ≤72 h |
 
 Interactive nodes are the debug queue; batch is never used to discover that a job crashes at import.
@@ -44,6 +44,7 @@ Request: `#BSUB -gpu "num=1:mode=exclusive_process"`. Extras: `-R "select[gpu32g
 - Over-requesting memory/walltime delays scheduling; under-requesting gets the job killed.
 - Use `-M` (per-process kill limit) *and* `-R rusage` (scheduling request).
 - `python -u` for unbuffered logs so `bpeek` is useful.
+- `p1` batch supports `-W`; the `p1i` interactive queue rejects it. `p1gpush` currently fails with `Invalid syntax for option -env` on this LSF; `hpc gpu p1` submits the equivalent `bsub -q p1i ... -Is` directly.
 
 ## Managing jobs
 
