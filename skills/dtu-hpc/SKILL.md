@@ -60,6 +60,7 @@ hpc pull <id> [--dest D]   # rsync the run dir
 
 ## Job scripts and queues
 
+- **Stay on one queue.** Default GPU batch queue is `p1`. Do not rotate queues because a snapshot shows fewer “jobs ahead”: `bstat`/`classstat`/`showstart` estimates are noisy, and killing a pending job loses its position. Switch only for (a) explicit user instruction or (b) a hard resource mismatch (GPU model/memory, walltime, access/quota) that `p1` cannot satisfy. State the reason once in the issue/PR and make one deliberate switch — never a shuffle loop.
 - Start from `templates/job.lsf` / `templates/smoke.lsf`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}` are rendered by the CLI.
 - GPU queues: `gpua100`, `gpul40s`, `gpuv100`, `gpua10`, `gpua40`, plus `p1` (Hopper, project shares, max 1 node/job); request with `#BSUB -gpu "num=1:mode=exclusive_process"`.
 - CPU queue `hpc` (72 h max). Default walltime is only 15 min — always set `-W`.
@@ -70,7 +71,7 @@ hpc pull <id> [--dest D]   # rsync the run dir
 ## Guardrails
 
 - Never run applications on the login node; only submit and inspect.
-- Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `bkill` duplicates.
+- Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `bkill` duplicates. Never kill a pending/running job solely to chase a shorter queue.
 - Never put tokens, keys, or the DTU password in the repo or job scripts. Local `export` does not cross `hpc submit`; use `hpc secret set NAME`, then source `{{SECRETS}}` in the job (see `references/sync.md`).
 - Code is immutable per run: if you need a change, commit and submit a new job; do not edit `{{CODE_DIR}}`.
 - Data lives in `/work3/$USER` (not backed up) or a private HF repo pinned by revision; home is 30 GB and backed up.
