@@ -12,6 +12,26 @@ Sources: <https://www.hpc.dtu.dk/?page_id=2759>, <https://www.hpc.dtu.dk/?page_i
 
 Interactive nodes are the debug queue; batch is never used to discover that a job crashes at import.
 
+## API-bound jobs do not need a GPU
+
+If the job only calls an external API (an LLM judge or student) and does any
+model work on CPU, do **not** take a GPU. Use the `hpc` CPU queue instead:
+
+```sh
+#BSUB -q hpc
+#BSUB -n 1
+#BSUB -R "rusage[mem=8GB]"
+#BSUB -W 24:00
+```
+
+- The 72 h ceiling is the real constraint. Chunk work per cell, write one output
+  per cell, and make the runner skip completed cells on re-submit.
+- Export API keys from the submit environment; never write them into the repo or
+  the job script.
+- Compute nodes have network egress. Prove it with a one-call smoke before a
+  long run.
+- Use `python -u` so `bpeek`/`hpc logs -f` show progress.
+
 ## GPU queues
 
 | Queue | Hardware (per node) |

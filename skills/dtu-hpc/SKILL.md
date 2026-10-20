@@ -18,6 +18,9 @@ Local-first workflow: edit and test on the Mac, ship an immutable `git archive` 
 ## Workflow
 
 1. **Local smoke first.** Unit tests + a tiny CPU run. Do not spend a GPU slot on "does it import".
+1b. **Pick the resource honestly.** GPU only for local model inference. A job
+    that only calls an external API (judge/student) and does CPU work belongs on
+    the `hpc` CPU queue, not `p1`/`gpua100`.
 2. **Commit.** The CLI ships `HEAD`; a dirty tree is refused. WIP commits on a feature branch are fine.
 2b. **Interactive check (optional).** `hpc stage` → `hpc shell` (CPU `linuxsh`) or `hpc gpu a100`; `cd .../interactive/current` and run the script. Shared nodes: short tests only.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths.
@@ -56,10 +59,13 @@ hpc pull <id> [--dest D]   # rsync the run dir
 - Never put tokens, keys, or the DTU password in the repo or job scripts.
 - Code is immutable per run: if you need a change, commit and submit a new job; do not edit `{{CODE_DIR}}`.
 - Data lives in `/work3/$USER` (not backed up) or a private HF repo pinned by revision; home is 30 GB and backed up.
+- Large artefacts go to a private HF repo **or bucket** (`hf sync` / `hf buckets cp`); `hf upload --repo-type dataset` does not work on a bucket.
+- Pull metrics and logs with `hpc pull`; do not rsync gigabytes of checkpoints back.
 - If auth needs a human, stop and say so; do not attempt to automate the DTU password.
 
 ## References
 
 - `references/auth.md` — SSH key, ControlMaster, re-auth, tmux, security.
-- `references/sync.md` — code snapshots, HF data pinning, run manifests, result flow.
-- `references/queues.md` — queue parameters, template guidance, smoke/batch tiers.
+- `references/sync.md` — code snapshots, HF data pinning, buckets, run manifests, result flow.
+- `references/queues.md` — queue parameters, template guidance, API-bound CPU jobs, smoke/batch tiers.
+- `references/troubleshooting.md` — IPv6/DNS hangs, bucket-vs-repo errors, import races, walltime kills.

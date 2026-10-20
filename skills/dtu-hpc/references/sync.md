@@ -22,6 +22,8 @@ Consequences:
 
 - Private HF repos for datasets/models; pin a revision (commit hash), not `main`.
 - Set `HF_HOME=/work3/$USER/hf` so the cache lives on scratch, not the 30 GB home quota.
+- Set `HF_HUB_OFFLINE=1` once weights are cached, so a run fails loudly instead of
+  silently re-downloading a different revision. Record the revision in the manifest.
 - Keep large data already on `/work3` where it is; record its path and checksum instead of re-downloading.
 - A small `data.lock.json` in the repo is enough:
 
@@ -30,6 +32,22 @@ Consequences:
 ```
 
 - Do not use Syncthing, rsync daemons, SSHFS, or DVC remotes for this: there is no always-on endpoint, and code drift is the failure mode we are avoiding.
+
+### Buckets are not dataset repos
+
+Some projects use an HF **bucket** as transport (e.g. `rasgaard/test`). A bucket
+is an object store, not a dataset repo: `hf upload --repo-type dataset` fails or
+writes to the wrong place. Use the bucket commands instead:
+
+```sh
+hf buckets create <user>/<bucket>
+hf sync <local-dir> hf://buckets/<user>/<bucket>/
+hf buckets cp hf://buckets/<user>/<bucket>/<file> .
+```
+
+A bucket id looks like `user/name`, which makes the confusion easy. See
+`troubleshooting.md` for the IPv6/DNS hang that can make both commands look
+"stuck" before any transfer starts.
 
 ## Python env: one shared uv venv on /work3
 
@@ -50,7 +68,7 @@ uv run --frozen --no-sync python -u train.py
 ## Results
 
 - Small metrics → `experiments.jsonl` or Trackio; commit them via a PR.
-- Large artefacts → upload from the HPC job to a private HF repo (write token scoped to that repo, stored only on the cluster with mode 600).
+- Large artefacts → upload from the HPC job to a private HF repo **or bucket** (write token scoped to that target, stored only on the cluster with mode 600).
 - Per-run manifest (recommended in the job script):
 
 ```json
