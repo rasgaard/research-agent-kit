@@ -31,6 +31,22 @@ Consequences:
 
 - Do not use Syncthing, rsync daemons, SSHFS, or DVC remotes for this: there is no always-on endpoint, and code drift is the failure mode we are avoiding.
 
+## Python env: one shared uv venv on /work3
+
+Compute nodes have PyPI/HF access (verified on `p1`), but re-downloading torch per job is waste. Keep the venv and caches on scratch and sync only from the committed lock:
+
+```sh
+module load python3/3.11.9
+export PATH="$HOME/.local/bin:$PATH"       # uv lives in ~/.local/bin
+export UV_PYTHON_DOWNLOADS=never
+export UV_CACHE_DIR="/work3/$USER/.cache/uv"
+export UV_PROJECT_ENVIRONMENT="/work3/$USER/hpc/venvs/<name>"
+uv sync --frozen --python "$(command -v python3)"
+uv run --frozen --no-sync python -u train.py
+```
+
+`examples/hf-smoke/` is the working reference; first sync was ~66 s, subsequent `uv sync` audited 72 packages in 183 ms.
+
 ## Results
 
 - Small metrics → `experiments.jsonl` or Trackio; commit them via a PR.
