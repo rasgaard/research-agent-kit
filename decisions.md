@@ -81,3 +81,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: pick the queue with the shortest estimated wait each time (noisy and churn-heavy; rejected); always use the fastest hardware queue regardless of fit (wastes scarce resources; rejected); leave it implicit (the observed over-indexing recurs; rejected).
 - Refs: #31.
 - Tags: hpc, queues, workflow, guardrails.
+
+## 2026-10-20 — HPC scheduling: one job by default, arrays only for throughput
+
+- Context: the skill said “use arrays for sweeps” without a decision rule, biasing toward arrays; arrays create N queue entries with no co-scheduling guarantee, while one job holds a single allocation and amortizes setup/model loading.
+- Decision: default to one job with an internal loop; chunk into roughly 2–8 jobs when the total exceeds one walltime; use an array only for many substantial independent units where parallel throughput matters, always capped with `%K`; never array tiny, ordered, or single-node/multi-GPU work.
+- Alternatives: always array (queue churn and repeated setup; rejected); always one job (cannot exceed walltime and loses throughput; rejected); leave it implicit (the array bias recurs; rejected).
+- Refs: #33.
+- Tags: hpc, scheduling, arrays, workflow, guardrails.

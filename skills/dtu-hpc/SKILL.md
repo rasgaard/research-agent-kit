@@ -66,7 +66,8 @@ hpc pull <id> [--dest D]   # rsync the run dir
 - CPU queue `hpc` (72 h max). Default walltime is only 15 min — always set `-W`.
 - Interactive dev nodes: `a100sh`, `voltash`, `sxm2sh`. Shared; use them for a one-step check, then submit batch.
 - Check availability with `classstat <queue>`, `nodestat -g <queue>`, `showstart <id>`.
-- Checkpoint long jobs; use arrays (`-J "sweep[1-20]"`) for sweeps. Array tasks must write per-task files (`out/$LSB_JOBINDEX.jsonl` or `$LSB_JOBID/$LSB_JOBINDEX/`), never append to one shared file concurrently.
+- **Default to one job with an internal loop.** Chunk into roughly 2–8 jobs when the total exceeds one walltime, and use an array only for many substantial independent units where parallel throughput is the point. Arrays are N queue entries with no co-scheduling guarantee; cap them (`-J "name[1-N]%K"`), and never array work that needs one node or multiple GPUs together. See `references/queues.md#one-job-vs-chunked-vs-array`.
+- Checkpoint every unit. Array tasks must write per-task files (`out/$LSB_JOBINDEX.jsonl` or `$LSB_JOBID/$LSB_JOBINDEX/`), never append to one shared file concurrently.
 
 ## Guardrails
 
