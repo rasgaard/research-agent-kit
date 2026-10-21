@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -41,6 +42,8 @@ class HpcCliTest(unittest.TestCase):
                 exit 0 ;;
               *"bsub"*) printf 'Job <123> is submitted to queue <gpua100>.\\n' ;;
               *"bstat"*) printf 'JOBID USER QUEUE JOB_NAME NALLOC STAT\\n' ;;
+              *"bjobs"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
+              *"%T@"*) [ -n "${HPC_TEST_LOG_STATS:-}" ] && cat "$HPC_TEST_LOG_STATS" ;;
               *"-printf"*) [ -n "${HPC_TEST_LOG_NAMES:-}" ] && cat "$HPC_TEST_LOG_NAMES" ;;
               *"printf"*) printf 'tester\\n/home/tester\\n' ;;
             esac
@@ -75,14 +78,17 @@ class HpcCliTest(unittest.TestCase):
         self.git("add", "job.lsf")
         self.git("commit", "-qm", "job")
 
-    def add_ledger(self) -> None:
+    def add_ledger(self, job_id: int = 123, submitted_at: str | None = None) -> None:
         path = self.repo / ".git" / "hpc" / "jobs.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({
-            "job_id": 123,
-            "run_id": "20260101T000000Z-abc12345",
-            "run_dir": "/work3/tester/hpc/proj/jobs/20260101T000000Z-abc12345",
-        }) + "\n")
+        entry = {
+            "job_id": job_id,
+            "run_id": f"20260101T000000Z-{job_id}",
+            "run_dir": f"/work3/tester/hpc/proj/jobs/20260101T000000Z-{job_id}",
+        }
+        if submitted_at:
+            entry["submitted_at"] = submitted_at
+        path.write_text(json.dumps(entry) + "\n")
 
     def hpc(self, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         env = os.environ.copy()
@@ -219,6 +225,87 @@ class HpcCliTest(unittest.TestCase):
         self.assertIn("123-load-1.out", result.stderr)
         self.assertIn("123-load-1.err", result.stderr)
         self.assertNotIn("123-load-2.out", result.stderr)
+
+    def test_watch_emits_terminal_failure_once(self) -> None:
+        self.add_ledger()
+        bjobs = Path(self.tmp.name) / "bjobs.txt"
+        header = "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+        bjobs.write_text(header + "123 tester RUN p1 host exec job now\n")
+        env = {"HPC_TEST_BJOBS": str(bjobs)}
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.repo / ".git" / "hpc" / "events.jsonl"
+        self.assertFalse(events.exists())
+
+        bjobs.write_text(header + "123 tester EXIT p1 host exec job now\n")
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = events.read_text().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(json.loads(lines[0])["event"], "failed")
+
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(events.read_text().splitlines()), 1)
+
+    def test_watch_stall_emits_once(self) -> None:
+        self.add_ledger()
+        bjobs = Path(self.tmp.name) / "bjobs.txt"
+        bjobs.write_text(
+            "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+            "123 tester RUN p1 host exec job now\n")
+        stats = Path(self.tmp.name) / "log-stats.txt"
+        stats.write_text(f"{int(time.time()) - 3600} 42\n")
+        env = {"HPC_TEST_BJOBS": str(bjobs), "HPC_TEST_LOG_STATS": str(stats)}
+        result = self.hpc("watch", "--once", "--stall-minutes", "30", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.repo / ".git" / "hpc" / "events.jsonl"
+        lines = events.read_text().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(json.loads(lines[0])["event"], "stalled")
+
+        result = self.hpc("watch", "--once", "--stall-minutes", "30", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(events.read_text().splitlines()), 1)
+
+    def test_events_unread_and_peek(self) -> None:
+        events = self.repo / ".git" / "hpc" / "events.jsonl"
+        events.parent.mkdir(parents=True)
+        entries = [
+            {"timestamp": "2026-10-21T12:00:00+00:00", "job_id": 123,
+             "event": "completed", "status": "DONE", "detail": "status DONE"},
+            {"timestamp": "2026-10-21T12:01:00+00:00", "job_id": 124,
+             "event": "failed", "status": "EXIT", "detail": "status EXIT"},
+        ]
+        events.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
+
+        result = self.hpc("events", "--peek")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("job 123 completed", result.stdout)
+        self.assertIn("job 124 failed", result.stdout)
+
+        result = self.hpc("events", "--unread")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("job 123 completed", result.stdout)
+
+        result = self.hpc("events")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no events", result.stderr)
+
+    def test_array_status_helpers(self) -> None:
+        import runpy
+        import types
+        module = types.SimpleNamespace(**runpy.run_path(str(HPC), run_name="hpc_cli"))
+        text = (
+            "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+            "123[1] tester RUN p1 host exec job now\n"
+            "123[2] tester EXIT p1 host exec job now\n"
+        )
+        states = module.parse_bjobs(text)
+        self.assertEqual(states[123], ["RUN", "EXIT"])
+        self.assertEqual(module.summarize_states(states[123]), "EXIT")
+        self.assertFalse(module.states_are_terminal(states[123]))
+        self.assertTrue(module.states_are_terminal(["DONE", "EXIT"]))
 
     def test_allow_dirty_warns_but_submits_head(self) -> None:
         (self.repo / "train.py").write_text("print('changed')\n")

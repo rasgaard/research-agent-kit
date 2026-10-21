@@ -12,8 +12,8 @@ skills/research-init/        # opencode skill: "start a new research project"
   templates/github/          # .github/ issue/PR templates copied into new projects
 skills/dtu-hpc/              # optional: DTU LSF workflow (local-first, SHA-pinned jobs)
   SKILL.md                   # commands, guardrails, re-auth protocol
-  references/                # auth, sync, queues — verified DTU docs
-bin/hpc                      # stdlib CLI: init/login/sync-env/shell/gpu/submit/status/logs/pull/secret
+  references/                # auth, sync, queues, monitoring — verified DTU docs
+bin/hpc                      # stdlib CLI: init/login/sync-env/shell/gpu/submit/status/logs/pull/secret/watch/events
 examples/hf-smoke/           # uv + torch + transformers + datasets p1 job (verified)
 templates/                   # LSF job + smoke templates, ssh_config, config.ini
 tests/test_hpc.py            # stubbed CLI tests (no network)
@@ -56,6 +56,8 @@ hpc stage                       # HEAD → /work3/.../interactive/current
 hpc shell                       # CPU shared node (linuxsh), or: hpc gpu a100|p1
 hpc submit templates/smoke.lsf --dry-run
 hpc submit templates/smoke.lsf
+hpc watch --notify              # in tmux; writes .git/hpc/events.jsonl
+hpc events --unread            # agent/human event feed
 hpc logs <job-id> -f
 hpc pull <job-id>
 ```

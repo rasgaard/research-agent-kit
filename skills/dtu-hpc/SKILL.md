@@ -36,7 +36,7 @@ hpc stage                # optional interactive smoke
 2b. **Interactive check (optional).** `hpc stage` → `hpc shell` (CPU `linuxsh`) or `hpc gpu a100`; `cd .../interactive/current` and run the script. Shared nodes: short tests only.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths. Dry-run ships nothing and therefore allows a dirty tree; it still renders `HEAD`.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.
-5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (`bstat`). `bpeek` shows output of running jobs.
+5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (`bstat`). `bpeek` shows output of running jobs. For hands-off monitoring, start `hpc watch --notify` in tmux and read `hpc events --unread` before assuming a job is still healthy. See `references/monitoring.md`.
 6. **Pull.** `hpc pull <id>` → `runs/<run_id>/`. Commit small metrics; upload large artefacts to a private HF repo.
 
 ## Commands
@@ -56,6 +56,8 @@ hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty] [--allow-
 hpc status [id]            # bjobs -w (all) / bstat <id> (one)
 hpc logs <id> [-f] [--index N]  # tail per-element logs for arrays
 hpc pull <id> [--dest D] [--include-code]  # rsync; code/ is skipped by default
+hpc watch [--once] [--notify]  # poll ledger jobs and write events (60 s loop)
+hpc events [--unread] [--json] # agent-facing event feed
 ```
 
 ## Job scripts and queues
@@ -79,6 +81,7 @@ hpc pull <id> [--dest D] [--include-code]  # rsync; code/ is skipped by default
 - Data lives in `/work3/$USER` (not backed up) or a private HF repo pinned by revision; home is 30 GB and backed up.
 - Large artefacts go to a private HF repo **or bucket** (`hf sync` / `hf buckets cp`); `hf upload --repo-type dataset` does not work on a bucket.
 - Pull metrics and logs with `hpc pull`; do not rsync gigabytes of checkpoints back.
+- The watcher is advisory: it never resubmits, kills, or merges. Check its events before acting on a job that may have failed.
 - If auth needs a human, stop and say so; do not attempt to automate the DTU password.
 
 ## References
@@ -86,4 +89,5 @@ hpc pull <id> [--dest D] [--include-code]  # rsync; code/ is skipped by default
 - `references/auth.md` — SSH key, ControlMaster, re-auth, tmux, security.
 - `references/sync.md` — code snapshots, HF data pinning, buckets, run manifests, result flow.
 - `references/queues.md` — queue parameters, template guidance, API-bound CPU jobs, smoke/batch tiers.
+- `references/monitoring.md` — `hpc watch`/`hpc events`, event schema, limits, removal path.
 - `references/troubleshooting.md` — IPv6/DNS and login-node HF hangs, bucket-vs-repo errors, import races, walltime kills.

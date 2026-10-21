@@ -29,6 +29,10 @@ DEFAULT_UV_CACHE = "/work3/{user}/.cache/uv"
 DEFAULT_SECRETS = "$HOME/.config/dtu-hpc/secrets.env"
 GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
 P1_GPU_COMMAND = 'export TERM=${TERM:-xterm-256color}; p1gpush'
+TERMINAL_STATES = {"DONE", "EXIT"}
+SUSPENDED_STATES = {"SSUSP", "USUSP", "PSUSP"}
+WATCH_TERMINAL_EVENTS = {"completed", "failed", "stalled", "unknown",
+                         "monitor_error"}
 
 
 def config_path() -> Path:
@@ -96,6 +100,15 @@ def ssh_login(host: str, script: str, args: Optional[list[str]] = None,
     if args:
         command += " hpc " + " ".join(shlex.quote(arg) for arg in args)
     return ssh(host, [command], **kwargs)
+
+
+def ssh_login_batch(host: str, script: str,
+                    args: Optional[list[str]] = None) -> subprocess.CompletedProcess:
+    """Run a login-shell probe without ever prompting for authentication."""
+    command = "bash -lc " + shlex.quote(script)
+    if args:
+        command += " hpc " + " ".join(shlex.quote(arg) for arg in args)
+    return ssh_batch(host, [command])
 
 
 def socket_alive(host: str) -> bool:
@@ -208,6 +221,316 @@ def find_job(root: Path, job_id: str) -> Optional[dict]:
         if str(entry.get("job_id")) == str(job_id):
             return entry
     return None
+
+
+def events_path(root: Path) -> Path:
+    return git_dir(root) / "hpc" / "events.jsonl"
+
+
+def watch_state_path(root: Path) -> Path:
+    return git_dir(root) / "hpc" / "watch-state.json"
+
+
+def events_offset_path(root: Path) -> Path:
+    return git_dir(root) / "hpc" / "events.offset"
+
+
+def read_event_lines(root: Path) -> list[str]:
+    path = events_path(root)
+    if not path.exists():
+        return []
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def append_event(root: Path, event: dict) -> None:
+    path = events_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, sort_keys=True) + "\n")
+
+
+def load_watch_state(root: Path) -> dict:
+    path = watch_state_path(root)
+    if not path.exists():
+        return {"jobs": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"jobs": {}}
+    if not isinstance(data, dict):
+        return {"jobs": {}}
+    data.setdefault("jobs", {})
+    return data
+
+
+def save_watch_state(root: Path, state: dict) -> None:
+    path = watch_state_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8")
+
+
+def parse_bjobs(text: str) -> dict[int, list[str]]:
+    """Map a parent job id to the statuses of its elements."""
+    jobs: dict[int, list[str]] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        match = re.fullmatch(r"(\d+)(?:\[\d+\])?", parts[0])
+        if not match:
+            continue
+        jobs.setdefault(int(match.group(1)), []).append(parts[2].upper())
+    return jobs
+
+
+def summarize_states(states: list[str]) -> str:
+    if not states:
+        return "UNKNOWN"
+    if "EXIT" in states:
+        return "EXIT"
+    if all(state == "DONE" for state in states):
+        return "DONE"
+    if any(state == "RUN" for state in states):
+        return "RUN"
+    if any(state == "PEND" for state in states):
+        return "PEND"
+    if any(state in SUSPENDED_STATES for state in states):
+        return "SUSP"
+    return states[0]
+
+
+def states_are_terminal(states: list[str]) -> bool:
+    return bool(states) and all(state in TERMINAL_STATES for state in states)
+
+
+def parse_timestamp(value: object) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def parse_log_stats(text: str) -> Optional[tuple[float, int]]:
+    latest: Optional[tuple[float, int]] = None
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            mtime, size = float(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        if latest is None or mtime > latest[0]:
+            latest = (mtime, size)
+    return latest
+
+
+def job_is_recent(entry: dict, now: datetime, lookback_hours: int) -> bool:
+    if lookback_hours <= 0:
+        return True
+    submitted = parse_timestamp(entry.get("submitted_at"))
+    if submitted is None:
+        return True
+    return (now - submitted).total_seconds() <= lookback_hours * 3600
+
+
+def make_event(entry: dict, kind: str, status: str, detail: str,
+               now: datetime, **extra: object) -> dict:
+    event = {
+        "timestamp": now.isoformat(),
+        "job_id": entry.get("job_id"),
+        "run_id": entry.get("run_id"),
+        "event": kind,
+        "status": status,
+        "detail": detail,
+    }
+    event.update(extra)
+    return event
+
+
+def collect_watch_events(host: str, entries: list[dict], state: dict,
+                         now: datetime, stall_seconds: int,
+                         lookback_hours: int) -> list[dict]:
+    events: list[dict] = []
+    result = ssh_login_batch(host, "bjobs -w -a 2>/dev/null")
+    if result.returncode != 0:
+        error = result.stderr.strip() or f"bjobs failed with exit code {result.returncode}"
+        if not state.get("last_error"):
+            events.append({
+                "timestamp": now.isoformat(),
+                "event": "monitor_error",
+                "status": "UNKNOWN",
+                "detail": error,
+            })
+        state["last_error"] = error
+        return events
+    if state.get("last_error"):
+        events.append({
+            "timestamp": now.isoformat(),
+            "event": "monitor_recovered",
+            "status": "OK",
+            "detail": "bjobs is reachable again",
+        })
+        state.pop("last_error", None)
+
+    statuses = parse_bjobs(result.stdout)
+    jobs = state.setdefault("jobs", {})
+    for entry in entries:
+        try:
+            job_id = int(entry["job_id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        key = str(job_id)
+        previous = jobs.get(key, {})
+        if previous.get("terminal"):
+            continue
+        if key not in jobs and not job_is_recent(entry, now, lookback_hours):
+            continue
+
+        raw_states = statuses.get(job_id, [])
+        status = summarize_states(raw_states)
+        terminal = states_are_terminal(raw_states)
+        before = previous.get("status")
+
+        if status != before:
+            if status == "DONE" and terminal:
+                kind = "completed"
+            elif status == "EXIT":
+                kind = "failed"
+            elif status == "UNKNOWN":
+                kind = "unknown"
+            else:
+                kind = "state"
+            if previous or kind in {"completed", "failed", "unknown"}:
+                if kind == "failed" and not terminal:
+                    detail = f"{raw_states.count('EXIT')}/{len(raw_states)} array elements EXIT"
+                else:
+                    detail = f"status {status}"
+                events.append(make_event(entry, kind, status, detail, now))
+            previous["status"] = status
+            previous["stalled"] = False
+        previous["terminal"] = terminal
+
+        if status == "RUN" and stall_seconds > 0 and entry.get("run_dir"):
+            log_result = ssh_login_batch(
+                host,
+                'find "$1" -maxdepth 1 -type f -name "$2*" -printf "%T@ %s\\n" 2>/dev/null',
+                [str(entry["run_dir"]) + "/logs", key])
+            if log_result.returncode == 0:
+                stats = parse_log_stats(log_result.stdout)
+                if stats is not None:
+                    log_age = max(0.0, now.timestamp() - stats[0])
+                    if log_age >= stall_seconds and not previous.get("stalled"):
+                        events.append(make_event(
+                            entry, "stalled", status,
+                            f"log unchanged for {int(log_age // 60)}m", now,
+                            log_age_s=int(log_age)))
+                        previous["stalled"] = True
+                    elif log_age < stall_seconds and previous.get("stalled"):
+                        events.append(make_event(
+                            entry, "resumed", status, "log is growing again", now,
+                            log_age_s=int(log_age)))
+                        previous["stalled"] = False
+                    previous["last_log_mtime"] = stats[0]
+
+        jobs[key] = previous
+
+    return events
+
+
+def format_event(event: dict) -> str:
+    stamp = str(event.get("timestamp", "")).replace("T", " ")[:19]
+    job_id = event.get("job_id")
+    prefix = f"job {job_id}" if job_id is not None else "watcher"
+    return (f"{stamp} {prefix} {event.get('event', 'event')} "
+            f"({event.get('status', '?')}) {event.get('detail', '')}").rstrip()
+
+
+def notify_event(event: dict) -> None:
+    if sys.platform != "darwin":
+        return
+    message = format_event(event)
+    script = f'display notification {json.dumps(message)} with title "DTU HPC"'
+    try:
+        run(["osascript", "-e", script], stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def emit_event(root: Path, event: dict, notify: bool) -> None:
+    append_event(root, event)
+    print(format_event(event), flush=True)
+    if notify and event.get("event") in WATCH_TERMINAL_EVENTS:
+        notify_event(event)
+
+
+def cmd_watch(host: str, args: argparse.Namespace) -> int:
+    root = repo_root()
+    entries = read_ledger(root)
+    if not entries:
+        print("hpc: no jobs in ledger", file=sys.stderr)
+        return 0
+    ensure(host)
+    state = load_watch_state(root)
+    if args.once:
+        print(f"hpc: checking {len(entries)} ledger job(s) once", file=sys.stderr)
+    else:
+        print(f"hpc: watching {len(entries)} ledger job(s) every {args.interval}s; "
+              f"events: {events_path(root)}", file=sys.stderr)
+    try:
+        while True:
+            now = datetime.now(timezone.utc)
+            events = collect_watch_events(
+                host, entries, state, now,
+                max(0, args.stall_minutes) * 60, args.lookback_hours)
+            for event in events:
+                emit_event(root, event, args.notify)
+            save_watch_state(root, state)
+            if args.once:
+                break
+            time.sleep(max(1, args.interval))
+    except KeyboardInterrupt:
+        print("hpc: watcher stopped", file=sys.stderr)
+    return 0
+
+
+def cmd_events(_host: str, args: argparse.Namespace) -> int:
+    root = repo_root()
+    lines = read_event_lines(root)
+    if args.all:
+        selected = list(enumerate(lines))
+        offset = len(lines)
+    else:
+        path = events_offset_path(root)
+        try:
+            offset = int(path.read_text(encoding="utf-8").strip())
+        except (FileNotFoundError, ValueError):
+            offset = 0
+        offset = min(max(offset, 0), len(lines))
+        selected = list(enumerate(lines[offset:], start=offset))
+    if not selected:
+        print("hpc: no events", file=sys.stderr)
+        return 0
+    for _index, line in selected:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if args.json:
+            print(json.dumps(event, sort_keys=True))
+        else:
+            print(format_event(event))
+    if not args.all and not args.peek:
+        events_offset_path(root).parent.mkdir(parents=True, exist_ok=True)
+        events_offset_path(root).write_text(f"{len(lines)}\n", encoding="utf-8")
+    return 0
 
 
 def render(text: str, values: dict[str, str]) -> str:
@@ -782,6 +1105,26 @@ def build_parser() -> argparse.ArgumentParser:
     pull.add_argument("--include-code", action="store_true",
                       help="also pull the code/ snapshot")
     pull.set_defaults(func=cmd_pull)
+
+    watch = sub.add_parser("watch", help="poll ledger jobs and record events")
+    watch.add_argument("--once", action="store_true")
+    watch.add_argument("--interval", type=int, default=60)
+    watch.add_argument("--stall-minutes", type=int, default=30,
+                       help="emit a stall when a RUN log is older than this (0 disables)")
+    watch.add_argument("--lookback-hours", type=int, default=24,
+                       help="ignore ledger jobs older than this on first sight (0 = all)")
+    watch.add_argument("--notify", action="store_true",
+                       help="send macOS notifications for terminal/stall events")
+    watch.set_defaults(func=cmd_watch)
+
+    events = sub.add_parser("events", help="print watcher events for the agent")
+    events.add_argument("--unread", action="store_true",
+                        help="print unread events (default)")
+    events.add_argument("--all", action="store_true")
+    events.add_argument("--json", action="store_true")
+    events.add_argument("--peek", action="store_true",
+                        help="do not advance the unread offset")
+    events.set_defaults(func=cmd_events)
 
     doctor = sub.add_parser("doctor", help="check local/remote prerequisites")
     doctor.set_defaults(func=cmd_doctor)
