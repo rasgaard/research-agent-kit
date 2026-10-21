@@ -83,22 +83,31 @@ in ~3 s after forcing `socket.getaddrinfo` to `AF_INET` (first section). A
 project venv (`huggingface_hub 2.2.0`) succeeded on a later attempt, so this is
 an environment/HTTP-stack issue, not proof that login-node egress is blocked.
 
-**Check:** bound the attempt and separate xet from ordinary HTTP:
+**Rule:** bound every login-node cache attempt with `timeout 60`; this is a hard
+cap, not a retry loop. Check xet and IPv4 in the same bounded attempt:
 
 ```sh
-timeout 30s env HF_HOME=/work3/$USER/hf HF_HUB_DISABLE_XET=1 \
+timeout 60s env HF_HOME=/work3/$USER/hf HF_HUB_DISABLE_XET=1 \
   python3 -c 'from huggingface_hub import snapshot_download; print(snapshot_download("hf-internal-testing/tiny-random-bert", max_workers=1))'
 curl -4 -sI https://huggingface.co | head
 ```
 
-If the bounded attempt still hangs, do not keep retrying on the login node.
-Note whether disabling xet or forcing IPv4 changed anything; the `AF_INET`
-`sitecustomize` workaround used by jobs is not automatically present in a plain
-login shell.
+If it times out, do not keep retrying on the login node. Note whether disabling
+xet or forcing IPv4 changed anything; the `AF_INET` `sitecustomize` workaround
+used by jobs is not automatically present in a plain login shell. If it recurs,
+capture a stack before killing it:
 
-**Fix:** let the first batch job populate `HF_HOME` with `HF_HUB_OFFLINE=0`, or
-submit a short CPU/GPU job whose only purpose is caching. Wait for it to finish
-successfully, then run offline jobs with `HF_HUB_OFFLINE=1`. See
+```sh
+timeout 60s env HF_DEBUG=1 HF_HUB_DISABLE_XET=1 python3 -u -c '
+import faulthandler; faulthandler.dump_traceback_later(20, repeat=True)
+from huggingface_hub import snapshot_download
+snapshot_download("hf-internal-testing/tiny-random-bert", max_workers=1)'
+```
+
+**Fix:** first try forcing IPv4 as in the first section. For anything heavy, let
+the first batch job populate `HF_HOME` with `HF_HUB_OFFLINE=0`, or submit a short
+CPU/GPU job whose only purpose is caching. Wait for it to finish successfully,
+then run offline jobs with `HF_HUB_OFFLINE=1`. See
 `sync.md#data-pin-revisions-never-sync-a-tree`.
 
 ## API key works locally but is missing in the job
