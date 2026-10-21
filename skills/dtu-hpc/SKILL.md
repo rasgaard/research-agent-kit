@@ -36,7 +36,7 @@ hpc stage                # optional interactive smoke
 2b. **Interactive check (optional).** `hpc stage` → `hpc shell` (CPU `linuxsh`) or `hpc gpu a100`; `cd .../interactive/current` and run the script. Shared nodes: short tests only.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths. Dry-run ships nothing and therefore allows a dirty tree; it still renders `HEAD`.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.
-5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (`bstat`). `bpeek` shows output of running jobs. For hands-off monitoring, start `hpc watch --notify` in tmux and read `hpc events --unread` before assuming a job is still healthy. See `references/monitoring.md`.
+5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (`bstat`). `bpeek` shows output of running jobs. For hands-off monitoring, run `hpc watch --notify` in the foreground or background (see `references/monitoring.md`), and read `hpc events --unread` before assuming a job is still healthy.
 6. **Pull.** `hpc pull <id>` → `runs/<run_id>/`. Commit small metrics; upload large artefacts to a private HF repo.
 
 ## Commands

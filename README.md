@@ -56,8 +56,8 @@ hpc stage                       # HEAD → /work3/.../interactive/current
 hpc shell                       # CPU shared node (linuxsh), or: hpc gpu a100|p1
 hpc submit templates/smoke.lsf --dry-run
 hpc submit templates/smoke.lsf
-hpc watch --notify              # in tmux; writes .git/hpc/events.jsonl
-hpc events --unread            # agent/human event feed
+hpc watch --notify              # foreground; writes .git/hpc/events.jsonl
+hpc events --unread            # agent/human event feed (use nohup for background)
 hpc logs <job-id> -f
 hpc pull <job-id>
 ```
