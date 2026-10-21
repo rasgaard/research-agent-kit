@@ -69,6 +69,31 @@ cells done.
 completed cells. Re-submit the same command; do not rely on LSF requeue. Keep
 per-cell work small enough that a kill loses at most one cell.
 
+## HF download hangs on the login node
+
+**Symptom:** an HF download started in a login-node shell produces no output and
+no cache growth for minutes; the token is valid and the same repo downloads from
+a compute node. This is not confirmed as a universal login-node block, so treat
+it as “if it hangs, do X”.
+
+**Check:** bound the attempt and separate xet from ordinary HTTP:
+
+```sh
+timeout 30s env HF_HOME=/work3/$USER/hf HF_HUB_DISABLE_XET=1 \
+  python -c 'from huggingface_hub import snapshot_download; print(snapshot_download("HuggingFaceTB/SmolLM3-3B", max_workers=1))'
+curl -4 -sI https://huggingface.co | head
+```
+
+If the bounded attempt still hangs, do not keep retrying on the login node.
+Note whether disabling xet or forcing IPv4 changed anything; the `AF_INET`
+`sitecustomize` workaround used by jobs is not automatically present in a plain
+login shell.
+
+**Fix:** let the first batch job populate `HF_HOME` with `HF_HUB_OFFLINE=0`, or
+submit a short CPU/GPU job whose only purpose is caching. Wait for it to finish
+successfully, then run offline jobs with `HF_HUB_OFFLINE=1`. See
+`sync.md#data-pin-revisions-never-sync-a-tree`.
+
 ## API key works locally but is missing in the job
 
 **Symptom:** `export OPENROUTER_API_KEY=...` works in a local shell, then the
