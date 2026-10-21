@@ -73,14 +73,21 @@ per-cell work small enough that a kill loses at most one cell.
 
 **Symptom:** an HF download started in a login-node shell produces no output and
 no cache growth for minutes; the token is valid and the same repo downloads from
-a compute node. This is not confirmed as a universal login-node block, so treat
-it as “if it hangs, do X”.
+a compute node. This is not a universal login-node block, so treat it as “if it
+hangs, do X”.
+
+**Reproduced (2026-10-21):** on `login9`, `/usr/bin/python3` with
+`HF_HUB_DISABLE_XET=1` hung inside `urllib3` `create_connection` during
+`model_info`, with 0 bytes cached after 30 s. The same tiny download completed
+in ~3 s after forcing `socket.getaddrinfo` to `AF_INET` (first section). A
+project venv (`huggingface_hub 2.2.0`) succeeded on a later attempt, so this is
+an environment/HTTP-stack issue, not proof that login-node egress is blocked.
 
 **Check:** bound the attempt and separate xet from ordinary HTTP:
 
 ```sh
 timeout 30s env HF_HOME=/work3/$USER/hf HF_HUB_DISABLE_XET=1 \
-  python -c 'from huggingface_hub import snapshot_download; print(snapshot_download("HuggingFaceTB/SmolLM3-3B", max_workers=1))'
+  python3 -c 'from huggingface_hub import snapshot_download; print(snapshot_download("hf-internal-testing/tiny-random-bert", max_workers=1))'
 curl -4 -sI https://huggingface.co | head
 ```
 
