@@ -89,3 +89,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: always array (queue churn and repeated setup; rejected); always one job (cannot exceed walltime and loses throughput; rejected); leave it implicit (the array bias recurs; rejected).
 - Refs: #33; PR #34.
 - Tags: hpc, scheduling, arrays, workflow, guardrails.
+
+## 2026-10-21 — HPC CLI: arrays are first-class, uncapped arrays refused
+
+- Context: a 13-model sweep exposed four array frictions: `hpc logs` assumed a single log name, no-arg `hpc status` used `bstat` instead of `bjobs -w`, `hpc pull` copied `code/` and broke local test discovery, and `hpc submit` accepted uncapped arrays without warning.
+- Decision: `hpc submit` refuses uncapped arrays by default (`--allow-uncapped` is the explicit exception), `hpc logs` discovers per-element files and supports `--index`, `hpc status` uses `bjobs -w` for all jobs and `bstat <id>` for one, and `hpc pull` skips `code/` unless `--include-code` is passed. Queue overrides still warn.
+- Alternatives: warning-only array lint (too easy for agents to ignore; rejected); auto-inserting `%K` (silently changes semantics; rejected); keeping `code/` in pulls (duplicates tests and breaks `pytest`; rejected).
+- Refs: #36.
+- Tags: hpc, cli, arrays, logs, pull, status.

@@ -41,12 +41,16 @@ class HpcCliTest(unittest.TestCase):
                 exit 0 ;;
               *"bsub"*) printf 'Job <123> is submitted to queue <gpua100>.\\n' ;;
               *"bstat"*) printf 'JOBID USER QUEUE JOB_NAME NALLOC STAT\\n' ;;
+              *"-printf"*) [ -n "${HPC_TEST_LOG_NAMES:-}" ] && cat "$HPC_TEST_LOG_NAMES" ;;
               *"printf"*) printf 'tester\\n/home/tester\\n' ;;
             esac
             [ "${HPC_TEST_STALE:-0}" = 1 ] && exit 255
             exit 0
             """))
         (self.stub_bin / "ssh").chmod(0o755)
+        (self.stub_bin / "rsync").write_text(
+            '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$HPC_TEST_LOG"\n')
+        (self.stub_bin / "rsync").chmod(0o755)
         self.config = base / "config.ini"
         self.config.write_text("[hpc]\nhost = test\nremote_root = /work3/{user}/hpc/{repo}\n")
         self.git("init", "-q")
@@ -65,6 +69,20 @@ class HpcCliTest(unittest.TestCase):
     def git(self, *args: str) -> None:
         subprocess.run(["git", *args], cwd=self.repo, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def write_job(self, content: str) -> None:
+        (self.repo / "job.lsf").write_text(textwrap.dedent(content))
+        self.git("add", "job.lsf")
+        self.git("commit", "-qm", "job")
+
+    def add_ledger(self) -> None:
+        path = self.repo / ".git" / "hpc" / "jobs.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "job_id": 123,
+            "run_id": "20260101T000000Z-abc12345",
+            "run_dir": "/work3/tester/hpc/proj/jobs/20260101T000000Z-abc12345",
+        }) + "\n")
 
     def hpc(self, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         env = os.environ.copy()
@@ -127,6 +145,80 @@ class HpcCliTest(unittest.TestCase):
         result = self.hpc("submit", "job.lsf", "--queue", "p1", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("#BSUB -q p1", result.stdout)
+        self.assertIn("overrides script queue gpua100", result.stderr)
+
+    def test_uncapped_array_is_refused(self) -> None:
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J "sweep[1-3]"
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("uncapped array", result.stderr)
+        self.assertIn("--allow-uncapped", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_uncapped_array_dry_run_warns(self) -> None:
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J "sweep[1-3]"
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("uncapped array", result.stderr)
+
+    def test_capped_array_is_accepted(self) -> None:
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J "sweep[1-3]%2"
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("uncapped array", result.stderr)
+
+    def test_status_no_id_lists_all_jobs(self) -> None:
+        result = self.hpc("status")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("bjobs -w", self.log.read_text())
+
+    def test_status_id_uses_bstat(self) -> None:
+        result = self.hpc("status", "123")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn('bstat "$1"', log)
+        self.assertIn("123", log)
+
+    def test_pull_skips_code_by_default(self) -> None:
+        self.add_ledger()
+        result = self.hpc("pull", "123")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--exclude=/code/", self.log.read_text())
+        self.assertIn("excluded code/", result.stderr)
+
+    def test_pull_include_code_keeps_snapshot(self) -> None:
+        self.add_ledger()
+        result = self.hpc("pull", "123", "--include-code")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("--exclude=/code/", self.log.read_text())
+        self.assertNotIn("excluded code/", result.stderr)
+
+    def test_logs_array_index_selects_one_element(self) -> None:
+        self.add_ledger()
+        names = Path(self.tmp.name) / "log-names"
+        names.write_text(
+            "123-load-1.out\n"
+            "123-load-1.err\n"
+            "123-load-2.out\n"
+            "124-load-1.out\n")
+        result = self.hpc("logs", "123", "--index", "1",
+                          extra_env={"HPC_TEST_LOG_NAMES": str(names)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("123-load-1.out", result.stderr)
+        self.assertIn("123-load-1.err", result.stderr)
+        self.assertNotIn("123-load-2.out", result.stderr)
 
     def test_allow_dirty_warns_but_submits_head(self) -> None:
         (self.repo / "train.py").write_text("print('changed')\n")

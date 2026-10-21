@@ -58,7 +58,8 @@ Rules:
 
 - **Cap arrays.** `#BSUB -J "name[1-N]%K"`; choose `K` from the resources you can fairly use,
   not the size of the sweep. A large uncapped array crowds a shared queue and may hit
-  per-user limits.
+  per-user limits. `hpc submit` refuses uncapped arrays; pass `--allow-uncapped` only for an
+  intentional exception.
 - **Chunk before arraying.** 100 short units → 4–8 chunk jobs, not 100 elements; 100 long
   units → array with a cap. On `p1`, an array of 1-GPU elements can occupy multiple project
   nodes, so cap it deliberately.

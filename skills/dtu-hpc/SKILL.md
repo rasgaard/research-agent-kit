@@ -52,10 +52,10 @@ hpc stage                  # ship HEAD to /work3/.../interactive/current
 hpc shell                  # linuxsh shared CPU node, in tmux
 hpc gpu a100|v100|sxm2     # shared GPU node, in tmux (short tests only)
 hpc gpu p1                 # p1gpush (2 shared H100s)
-hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty]
-hpc status [id]            # bstat (falls back to bjobs)
-hpc logs <id> [-f]         # tail the run log (bpeek fallback for unledgered jobs)
-hpc pull <id> [--dest D]   # rsync the run dir
+hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty] [--allow-uncapped]
+hpc status [id]            # bjobs -w (all) / bstat <id> (one)
+hpc logs <id> [-f] [--index N]  # tail per-element logs for arrays
+hpc pull <id> [--dest D] [--include-code]  # rsync; code/ is skipped by default
 ```
 
 ## Job scripts and queues
@@ -66,7 +66,7 @@ hpc pull <id> [--dest D]   # rsync the run dir
 - CPU queue `hpc` (72 h max). Default walltime is only 15 min — always set `-W`.
 - Interactive dev nodes: `a100sh`, `voltash`, `sxm2sh`. Shared; use them for a one-step check, then submit batch.
 - Check availability with `classstat <queue>`, `nodestat -g <queue>`, `showstart <id>`.
-- **Default to one job with an internal loop.** Chunk into roughly 2–8 jobs when the total exceeds one walltime, and use an array only for many substantial independent units where parallel throughput is the point. Arrays are N queue entries with no co-scheduling guarantee; cap them (`-J "name[1-N]%K"`), and never array work that needs one node or multiple GPUs together. See `references/queues.md#one-job-vs-chunked-vs-array`.
+- **Default to one job with an internal loop.** Chunk into roughly 2–8 jobs when the total exceeds one walltime, and use an array only for many substantial independent units where parallel throughput is the point. Arrays are N queue entries with no co-scheduling guarantee; cap them (`-J "name[1-N]%K"`), and never array work that needs one node or multiple GPUs together. The CLI refuses an uncapped array; add `%K` or pass `--allow-uncapped` for an intentional exception. See `references/queues.md#one-job-vs-chunked-vs-array`.
 - Checkpoint every unit. Array tasks must write per-task files (`out/$LSB_JOBINDEX.jsonl` or `$LSB_JOBID/$LSB_JOBINDEX/`), never append to one shared file concurrently.
 
 ## Guardrails
