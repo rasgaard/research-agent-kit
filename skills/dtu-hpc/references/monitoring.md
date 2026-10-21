@@ -15,21 +15,21 @@ look without guessing.
 
 ```sh
 hpc login                     # watcher cannot prompt for the DTU password
-
-# foreground (keep the terminal open):
-hpc watch --notify
-
-# or background without tmux:
-nohup hpc watch --notify >> .git/hpc/watch.log 2>&1 &
-echo $! > .git/hpc/watch.pid
-
+tmux new -d -s hpc-watch -c "$PWD" 'hpc watch --notify'
 hpc events --unread           # agent or human reads what happened
 ```
 
 `hpc watch` runs in the foreground at a 60 s interval. Use `--once` for a cron
-job or a manual check. Stop a foreground watcher with Ctrl-C, or a background
-one with `kill "$(cat .git/hpc/watch.pid)"`. If `tmux` is installed,
-`tmux new -d -s hpc-watch 'hpc watch --notify'` also works.
+job or a manual check. Stop the tmux session with
+`tmux kill-session -t hpc-watch`.
+
+Without tmux, run it in the foreground and stop with Ctrl-C, or background it:
+
+```sh
+nohup hpc watch --notify >> .git/hpc/watch.log 2>&1 &
+echo $! > .git/hpc/watch.pid
+kill "$(cat .git/hpc/watch.pid)"
+```
 
 Useful variants:
 
