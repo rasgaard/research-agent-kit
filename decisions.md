@@ -113,3 +113,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: warning-only array lint (too easy for agents to ignore; rejected); auto-inserting `%K` (silently changes semantics; rejected); keeping `code/` in pulls (duplicates tests and breaks `pytest`; rejected).
 - Refs: #36; PR #39.
 - Tags: hpc, cli, arrays, logs, pull, status.
+
+## 2026-10-21 — HPC monitoring: local watcher plus event feed
+
+- Context: jobs survive SSH disconnects, but nobody notices completion/failure; the human had to monitor and prompt the agent, and a crashed job could be mistaken for running.
+- Decision: ship a two-layer MVP: `hpc watch` polls the ledger via `bjobs`, detects terminal states and stale RUN logs, and writes local events; `hpc events --unread` is the agent-facing feed. No job-side wrapper, auto-resubmit, `bkill`, or merge. Start under tmux; delete the commands and `.git/hpc/events*` to scrap it.
+- Alternatives: a subagent as the primary monitor (session-bound, cannot survive a closed CLI or sleep; rejected); job-side status wrapper first (useful later, but not needed for terminal-state detection; deferred); LSF email only (does not wake the agent or provide logs; rejected).
+- Refs: #41; PR #42.
+- Tags: hpc, monitoring, watcher, events, agent, workflow.
