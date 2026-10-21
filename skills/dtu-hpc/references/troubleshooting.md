@@ -34,6 +34,42 @@ python -c "import socket; print(socket.getaddrinfo('huggingface.co', 443)[0][0])
 # -> AddressFamily.AF_INET
 ```
 
+## `no kernel image is available for execution on the device`
+
+**Symptom:** model init or the first CUDA kernel fails with
+`torch.AcceleratorError: CUDA error: no kernel image is available for execution
+on the device`, often on `gpuv100`.
+
+**Cause:** the installed torch wheel has no kernels for the GPU’s compute
+capability. Current torch 2.14.1 wheels exclude `sm_70` (V100), so this is not
+model-specific.
+
+**Fix:** check `torch.cuda.get_device_capability()` and
+`torch.cuda.get_arch_list()` on the node. Resubmit on a supported architecture
+(`sm_80`+, preferably `sm_86`/`sm_89`/`sm_90`). Treat `gpuv100` as a last resort:
+use it only with a pinned torch build that includes `sm_70`, and smoke-test the
+exact checkpoint. Do not retry the same queue with the same environment.
+
+## `Fp8Dequantize` fails, or a checkpoint reports `Ckpt contains: 3`
+
+**Symptom:** loading an FP8 checkpoint fails during weight conversion, sometimes
+with `no kernel image` on older GPUs. On `gpul40s` the same load can instead fail
+with:
+
+```text
+ImportError: finegrained-fp8 kernel unavailable: 'kernels' is either not
+installed or uses an incompatible version (0.17.0 <= version < 0.18.0)
+```
+
+**Cause:** FP8 dequantisation needs FP8-capable hardware (`sm_89`+; L40S or
+H100). Pre-`sm_89` GPUs (`V100`, `A100`, `A10`, `A40`) cannot run it. On
+`sm_89`+, fine-grained FP8 checkpoints additionally need the `kernels` extra.
+
+**Fix:** use `gpul40s` or `p1` for FP8, and install the compatible `kernels`
+version in the job venv (or load the model in bf16 if the checkpoint allows it).
+Do not treat this as a generic “newer GPU” problem: the package extra is part of
+the requirement.
+
 ## `hf upload --repo-type dataset` fails: the target is a bucket
 
 Buckets are **not** dataset repos. `--repo-type dataset` errors or writes to the
