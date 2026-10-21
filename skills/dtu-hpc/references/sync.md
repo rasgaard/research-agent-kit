@@ -24,6 +24,10 @@ Consequences:
 - Set `HF_HOME=/work3/$USER/hf` so the cache lives on scratch, not the 30 GB home quota.
 - Set `HF_HUB_OFFLINE=1` once weights are cached, so a run fails loudly instead of
   silently re-downloading a different revision. Record the revision in the manifest.
+- **Cache on compute, then run offline.** The first job may download with
+  `HF_HUB_OFFLINE=0`; set `HF_HUB_OFFLINE=1` only after that job has populated
+  `HF_HOME` with the pinned revision. Do not warm the cache from a login-node
+  shell; if such a download hangs, see `troubleshooting.md#hf-download-hangs-on-the-login-node`.
 - Keep large data already on `/work3` where it is; record its path and checksum instead of re-downloading.
 - A small `data.lock.json` in the repo is enough:
 

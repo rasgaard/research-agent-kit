@@ -34,6 +34,42 @@ python -c "import socket; print(socket.getaddrinfo('huggingface.co', 443)[0][0])
 # -> AddressFamily.AF_INET
 ```
 
+## `no kernel image is available for execution on the device`
+
+**Symptom:** model init or the first CUDA kernel fails with
+`torch.AcceleratorError: CUDA error: no kernel image is available for execution
+on the device`, often on `gpuv100`.
+
+**Cause:** the installed torch wheel has no kernels for the GPU’s compute
+capability. Current torch 2.14.1 wheels exclude `sm_70` (V100), so this is not
+model-specific.
+
+**Fix:** check `torch.cuda.get_device_capability()` and
+`torch.cuda.get_arch_list()` on the node. Resubmit on a supported architecture
+(`sm_80`+, preferably `sm_86`/`sm_89`/`sm_90`). Treat `gpuv100` as a last resort:
+use it only with a pinned torch build that includes `sm_70`, and smoke-test the
+exact checkpoint. Do not retry the same queue with the same environment.
+
+## `Fp8Dequantize` fails, or a checkpoint reports `Ckpt contains: 3`
+
+**Symptom:** loading an FP8 checkpoint fails during weight conversion, sometimes
+with `no kernel image` on older GPUs. On `gpul40s` the same load can instead fail
+with:
+
+```text
+ImportError: finegrained-fp8 kernel unavailable: 'kernels' is either not
+installed or uses an incompatible version (0.17.0 <= version < 0.18.0)
+```
+
+**Cause:** FP8 dequantisation needs FP8-capable hardware (`sm_89`+; L40S or
+H100). Pre-`sm_89` GPUs (`V100`, `A100`, `A10`, `A40`) cannot run it. On
+`sm_89`+, fine-grained FP8 checkpoints additionally need the `kernels` extra.
+
+**Fix:** use `gpul40s` or `p1` for FP8, and install the compatible `kernels`
+version in the job venv (or load the model in bf16 if the checkpoint allows it).
+Do not treat this as a generic “newer GPU” problem: the package extra is part of
+the requirement.
+
 ## `hf upload --repo-type dataset` fails: the target is a bucket
 
 Buckets are **not** dataset repos. `--repo-type dataset` errors or writes to the
@@ -68,6 +104,47 @@ cells done.
 **Fix:** write one output per cell and a manifest, and make the runner skip
 completed cells. Re-submit the same command; do not rely on LSF requeue. Keep
 per-cell work small enough that a kill loses at most one cell.
+
+## HF download hangs on the login node
+
+**Symptom:** an HF download started in a login-node shell produces no output and
+no cache growth for minutes; the token is valid and the same repo downloads from
+a compute node. This is not a universal login-node block, so treat it as “if it
+hangs, do X”.
+
+**Reproduced (2026-10-21):** on `login9`, `/usr/bin/python3` with
+`HF_HUB_DISABLE_XET=1` hung inside `urllib3` `create_connection` during
+`model_info`, with 0 bytes cached after 30 s. The same tiny download completed
+in ~3 s after forcing `socket.getaddrinfo` to `AF_INET` (first section). A
+project venv (`huggingface_hub 2.2.0`) succeeded on a later attempt, so this is
+an environment/HTTP-stack issue, not proof that login-node egress is blocked.
+
+**Rule:** bound every login-node cache attempt with `timeout 60`; this is a hard
+cap, not a retry loop. Check xet and IPv4 in the same bounded attempt:
+
+```sh
+timeout 60s env HF_HOME=/work3/$USER/hf HF_HUB_DISABLE_XET=1 \
+  python3 -c 'from huggingface_hub import snapshot_download; print(snapshot_download("hf-internal-testing/tiny-random-bert", max_workers=1))'
+curl -4 -sI https://huggingface.co | head
+```
+
+If it times out, do not keep retrying on the login node. Note whether disabling
+xet or forcing IPv4 changed anything; the `AF_INET` `sitecustomize` workaround
+used by jobs is not automatically present in a plain login shell. If it recurs,
+capture a stack before killing it:
+
+```sh
+timeout 60s env HF_DEBUG=1 HF_HUB_DISABLE_XET=1 python3 -u -c '
+import faulthandler; faulthandler.dump_traceback_later(20, repeat=True)
+from huggingface_hub import snapshot_download
+snapshot_download("hf-internal-testing/tiny-random-bert", max_workers=1)'
+```
+
+**Fix:** first try forcing IPv4 as in the first section. For anything heavy, let
+the first batch job populate `HF_HOME` with `HF_HUB_OFFLINE=0`, or submit a short
+CPU/GPU job whose only purpose is caching. Wait for it to finish successfully,
+then run offline jobs with `HF_HUB_OFFLINE=1`. See
+`sync.md#data-pin-revisions-never-sync-a-tree`.
 
 ## API key works locally but is missing in the job
 

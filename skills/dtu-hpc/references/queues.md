@@ -101,17 +101,21 @@ model work on CPU, do **not** take a GPU. Use the `hpc` CPU queue instead:
 
 ## GPU queues
 
-| Queue | Hardware (per node) |
-|---|---|
-| `gpua100` | 2× A100 PCIe 40 GB / 80 GB |
-| `gpul40s` | 2× L40S 48 GB |
-| `gpuv100` | 2× V100 16/32 GB; some 4× V100-32 NVLink |
-| `gpua10` | 2× A10 24 GB |
-| `gpua40` | 2× A40 48 GB NVLink |
-| `gpuamd` | 2× AMD MI25 |
-| `p1` | Hopper (H100) pioneer queue; max 1 node/job; access via project shares |
+| Queue | Hardware (per node) | Compute capability |
+|---|---|---|
+| `gpua100` | 2× A100 PCIe 40 GB / 80 GB | `sm_80` |
+| `gpul40s` | 2× L40S 48 GB | `sm_89` |
+| `gpuv100` | 2× V100 16/32 GB; some 4× V100-32 NVLink | `sm_70` — last resort |
+| `gpua10` | 2× A10 24 GB | `sm_86` |
+| `gpua40` | 2× A40 48 GB NVLink | `sm_86` |
+| `gpuamd` | 2× AMD MI25 | ROCm (not CUDA; verify `gfx` with `rocminfo`) |
+| `p1` | Hopper (H100) pioneer queue; max 1 node/job; access via project shares | `sm_90` |
 
 Request: `#BSUB -gpu "num=1:mode=exclusive_process"`. Extras: `-R "select[gpu32gb]"`, `-R "select[sxm2]"`. Two GPUs: `-n 8` + `num=2`.
+
+**Check the wheel before picking a queue.** `torch.cuda.get_device_capability()` reports the hardware; `torch.cuda.get_arch_list()` reports the kernels the installed torch was built for. The current project torch 2.14.1 wheel excludes `sm_70`, so `gpuv100` is a last resort: only use it with a deliberately pinned torch build that includes `sm_70`, and smoke-test the exact model/checkpoint there. Do not assume a wheel supports an older architecture because the device is present.
+
+**FP8 checkpoints need more than a queue change.** Pre-`sm_89` GPUs (`V100`, `A100`, `A10`, `A40`) cannot dequantise FP8; `sm_89`+ (`L40S`, `H100`) can, but fine-grained FP8 checkpoints also need the `kernels` 0.17.x extra (or must be loaded in bf16). See `troubleshooting.md` for both error signatures.
 
 ## Template essentials
 

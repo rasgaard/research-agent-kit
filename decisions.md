@@ -90,6 +90,22 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Refs: #33; PR #34.
 - Tags: hpc, scheduling, arrays, workflow, guardrails.
 
+## 2026-10-21 — HF cache warming belongs on compute nodes; no hpc cache yet
+
+- Context: a login-node `snapshot_download` hung silently for 10 minutes with no cache growth, while the same project downloaded weights from compute nodes. Bounded reproduction on 2026-10-21: system Python hung in `urllib3` `create_connection`; forcing IPv4 fixed it; a project venv succeeded, so this is not a blanket login-node block.
+- Decision: document the conditional login-node HF hang, its bounded xet/IPv4 checks, and the required “cache on compute, then run offline” ordering. Make `timeout 60` the hard cap for any login-node cache attempt and capture a faulthandler stack if it recurs. Decline `hpc cache`/`hpc fetch` for now because cache path, revision, token, and job-dependency choices are project-specific; revisit if the friction recurs.
+- Alternatives: add a generic cache command now (scope creep and ambiguous semantics; rejected); declare login-node downloads blocked (project venv succeeds; rejected); leave the trap undocumented (it silently wastes login-node time; rejected).
+- Refs: #37; PR #40.
+- Tags: hpc, huggingface, downloads, login-node, offline, workflow.
+
+## 2026-10-21 — HPC GPU selection: verify torch arch, V100 last resort
+
+- Context: a `gpuv100` load check failed with `no kernel image` because torch 2.14.1 has no `sm_70` kernels; an L40S FP8 failure was initially attributed to arch but was a missing `kernels` 0.17.x extra.
+- Decision: document compute capability per GPU queue and treat V100 as a last resort that requires a deliberately pinned `sm_70` torch build; smoke prints device capability and torch arch list; FP8 requires `sm_89`+ plus the compatible `kernels` extra (or bf16 loading).
+- Alternatives: declare V100 universally unusable (too absolute; pinned builds may work; rejected); only document the error signatures (misses queue-selection cost; rejected); add an arch check to `hpc doctor` (no job/checkpoint context; declined).
+- Refs: #35; PR #38.
+- Tags: hpc, gpu, arch, fp8, troubleshooting.
+
 ## 2026-10-21 — HPC CLI: arrays are first-class, uncapped arrays refused
 
 - Context: a 13-model sweep exposed four array frictions: `hpc logs` assumed a single log name, no-arg `hpc status` used `bstat` instead of `bjobs -w`, `hpc pull` copied `code/` and broke local test discovery, and `hpc submit` accepted uncapped arrays without warning.
