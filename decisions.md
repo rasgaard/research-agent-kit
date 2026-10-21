@@ -89,3 +89,11 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Alternatives: always array (queue churn and repeated setup; rejected); always one job (cannot exceed walltime and loses throughput; rejected); leave it implicit (the array bias recurs; rejected).
 - Refs: #33; PR #34.
 - Tags: hpc, scheduling, arrays, workflow, guardrails.
+
+## 2026-10-21 — HPC GPU selection: verify torch arch, V100 last resort
+
+- Context: a `gpuv100` load check failed with `no kernel image` because torch 2.14.1 has no `sm_70` kernels; an L40S FP8 failure was initially attributed to arch but was a missing `kernels` 0.17.x extra.
+- Decision: document compute capability per GPU queue and treat V100 as a last resort that requires a deliberately pinned `sm_70` torch build; smoke prints device capability and torch arch list; FP8 requires `sm_89`+ plus the compatible `kernels` extra (or bf16 loading).
+- Alternatives: declare V100 universally unusable (too absolute; pinned builds may work; rejected); only document the error signatures (misses queue-selection cost; rejected); add an arch check to `hpc doctor` (no job/checkpoint context; declined).
+- Refs: #35.
+- Tags: hpc, gpu, arch, fp8, troubleshooting.
