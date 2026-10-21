@@ -69,6 +69,47 @@ cells done.
 completed cells. Re-submit the same command; do not rely on LSF requeue. Keep
 per-cell work small enough that a kill loses at most one cell.
 
+## HF download hangs on the login node
+
+**Symptom:** an HF download started in a login-node shell produces no output and
+no cache growth for minutes; the token is valid and the same repo downloads from
+a compute node. This is not a universal login-node block, so treat it as “if it
+hangs, do X”.
+
+**Reproduced (2026-10-21):** on `login9`, `/usr/bin/python3` with
+`HF_HUB_DISABLE_XET=1` hung inside `urllib3` `create_connection` during
+`model_info`, with 0 bytes cached after 30 s. The same tiny download completed
+in ~3 s after forcing `socket.getaddrinfo` to `AF_INET` (first section). A
+project venv (`huggingface_hub 2.2.0`) succeeded on a later attempt, so this is
+an environment/HTTP-stack issue, not proof that login-node egress is blocked.
+
+**Rule:** bound every login-node cache attempt with `timeout 60`; this is a hard
+cap, not a retry loop. Check xet and IPv4 in the same bounded attempt:
+
+```sh
+timeout 60s env HF_HOME=/work3/$USER/hf HF_HUB_DISABLE_XET=1 \
+  python3 -c 'from huggingface_hub import snapshot_download; print(snapshot_download("hf-internal-testing/tiny-random-bert", max_workers=1))'
+curl -4 -sI https://huggingface.co | head
+```
+
+If it times out, do not keep retrying on the login node. Note whether disabling
+xet or forcing IPv4 changed anything; the `AF_INET` `sitecustomize` workaround
+used by jobs is not automatically present in a plain login shell. If it recurs,
+capture a stack before killing it:
+
+```sh
+timeout 60s env HF_DEBUG=1 HF_HUB_DISABLE_XET=1 python3 -u -c '
+import faulthandler; faulthandler.dump_traceback_later(20, repeat=True)
+from huggingface_hub import snapshot_download
+snapshot_download("hf-internal-testing/tiny-random-bert", max_workers=1)'
+```
+
+**Fix:** first try forcing IPv4 as in the first section. For anything heavy, let
+the first batch job populate `HF_HOME` with `HF_HUB_OFFLINE=0`, or submit a short
+CPU/GPU job whose only purpose is caching. Wait for it to finish successfully,
+then run offline jobs with `HF_HUB_OFFLINE=1`. See
+`sync.md#data-pin-revisions-never-sync-a-tree`.
+
 ## API key works locally but is missing in the job
 
 **Symptom:** `export OPENROUTER_API_KEY=...` works in a local shell, then the

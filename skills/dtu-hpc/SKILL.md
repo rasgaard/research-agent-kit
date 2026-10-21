@@ -72,6 +72,7 @@ hpc pull <id> [--dest D]   # rsync the run dir
 ## Guardrails
 
 - Never run applications on the login node; only submit and inspect.
+- Heavy downloads (HF weights, pip packages) belong on compute nodes. If a login-node HF download hangs, stop and submit a short cache job; set `HF_HUB_OFFLINE=1` only after that job has populated `HF_HOME`. Bound any login-node cache test with `timeout 60`.
 - Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `bkill` duplicates. Never kill a pending/running job solely to chase a shorter queue.
 - Never put tokens, keys, or the DTU password in the repo or job scripts. Local `export` does not cross `hpc submit`; use `hpc secret set NAME`, then source `{{SECRETS}}` in the job (see `references/sync.md`).
 - Code is immutable per run: if you need a change, commit and submit a new job; do not edit `{{CODE_DIR}}`.
@@ -85,4 +86,4 @@ hpc pull <id> [--dest D]   # rsync the run dir
 - `references/auth.md` — SSH key, ControlMaster, re-auth, tmux, security.
 - `references/sync.md` — code snapshots, HF data pinning, buckets, run manifests, result flow.
 - `references/queues.md` — queue parameters, template guidance, API-bound CPU jobs, smoke/batch tiers.
-- `references/troubleshooting.md` — IPv6/DNS hangs, bucket-vs-repo errors, import races, walltime kills.
+- `references/troubleshooting.md` — IPv6/DNS and login-node HF hangs, bucket-vs-repo errors, import races, walltime kills.
