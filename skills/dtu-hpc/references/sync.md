@@ -97,7 +97,7 @@ Values never appear in argv, the repo, or the CLI log. `hpc secret set` merges o
 {"sha": "...", "job_id": 12345, "queue": "gpua100", "data_revision": "...", "host": "..."}
 ```
 
-- `hpc pull <id>` rsyncs `runs/<run_id>/` back for inspection; commit only what belongs in the repo.
+- `hpc pull <id>` rsyncs `runs/<run_id>/` back for inspection; `code/` is skipped by default so local test discovery does not pick up the snapshot. Use `--include-code` if you need the exact submitted tree; commit only what belongs in the repo.
 
 ## Storage facts (verify current quotas)
 

@@ -286,6 +286,44 @@ def apply_queue(text: str, queue: Optional[str]) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
+BSUB_JOB = re.compile(r'^#BSUB\s+-J\s+("[^"]*"|\S+)', re.MULTILINE)
+
+
+def bsub_job_name(text: str) -> Optional[str]:
+    match = BSUB_JOB.search(text)
+    return match.group(1).strip('"') if match else None
+
+
+def uncapped_array(text: str) -> Optional[str]:
+    """Return the array job name when it has no %K concurrency cap."""
+    name = bsub_job_name(text)
+    if not name or "[" not in name:
+        return None
+    if "]" not in name or "%" not in name.split("]", 1)[1]:
+        return name
+    return None
+
+
+def lint_submit(text: str, queue_override: Optional[str], allow_uncapped: bool,
+                dry_run: bool) -> None:
+    name = uncapped_array(text)
+    if name:
+        example = f"{name}%2"
+        message = (f"uncapped array '{name}': add a concurrency cap, e.g. "
+                   f"'{example}', or pass --allow-uncapped")
+        if dry_run:
+            print(f"hpc: warning: {message}", file=sys.stderr)
+        elif not allow_uncapped:
+            die(message)
+        else:
+            print(f"hpc: warning: allowing {message}", file=sys.stderr)
+    if queue_override:
+        original = extract_queue(text)
+        if original not in {"default", queue_override}:
+            print(f"hpc: warning: --queue {queue_override} overrides script queue "
+                  f"{original}", file=sys.stderr)
+
+
 def cmd_login(host: str, _args: argparse.Namespace) -> int:
     ensure(host)
     print(f"hpc: authenticated to {host} (multiplexed)")
@@ -475,6 +513,18 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
 
     job_name = args.name or script.stem
     source = script.read_text(encoding="utf-8")
+
+    if not args.dry_run:
+        if dirty and not args.allow_dirty:
+            die("working tree is dirty; commit (or push a WIP commit) before submitting")
+        if dirty:
+            print("hpc: warning: submitting a dirty tree; the snapshot is HEAD, not your edits",
+                  file=sys.stderr)
+        if branch == "HEAD" and not args.allow_dirty:
+            die("detached HEAD; check out a branch before submitting")
+
+    lint_submit(source, args.queue, args.allow_uncapped, args.dry_run)
+
     if args.dry_run:
         if dirty:
             print("hpc: warning: dirty tree; preview shows HEAD, not your edits",
@@ -493,14 +543,6 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
         print("--- rendered job script ---")
         print(rendered)
         return 0
-
-    if dirty and not args.allow_dirty:
-        die("working tree is dirty; commit (or push a WIP commit) before submitting")
-    if dirty:
-        print("hpc: warning: submitting a dirty tree; the snapshot is HEAD, not your edits",
-              file=sys.stderr)
-    if branch == "HEAD" and not args.allow_dirty:
-        die("detached HEAD; check out a branch before submitting")
 
     ensure(host)
     config = load_config()
@@ -544,27 +586,52 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
 
 def cmd_status(host: str, args: argparse.Namespace) -> int:
     ensure(host)
-    script = ('if command -v bstat >/dev/null 2>&1; then bstat "$@"; '
-              'else bjobs -w "$@"; fi')
+    if args.job_id:
+        script = ('if command -v bstat >/dev/null 2>&1; then bstat "$1"; '
+                  'else bjobs -w "$1"; fi')
+    else:
+        script = ('if command -v bjobs >/dev/null 2>&1; then bjobs -w; '
+                  'else bstat; fi')
     result = ssh_login(host, script, [args.job_id] if args.job_id else [], check=False)
     sys.stdout.write(result.stdout)
     sys.stderr.write(result.stderr)
     return result.returncode
 
 
+def log_file_names(names: list[str], job_id: str, index: Optional[int]) -> list[str]:
+    prefix = re.compile(rf"^{re.escape(str(job_id))}(?:$|[-_.])")
+    selected = [name for name in names
+                if prefix.match(name) and name.endswith((".out", ".err"))]
+    if index is not None:
+        indexed = re.compile(rf"(?:^|[-_.])0*{index}\.(?:out|err)$")
+        selected = [name for name in selected if indexed.search(name)]
+    return sorted(selected)
+
+
 def cmd_logs(host: str, args: argparse.Namespace) -> int:
     ensure(host)
     root = repo_root()
     entry = find_job(root, args.job_id)
-    if entry:
-        out = f"{entry['run_dir']}/logs/{args.job_id}.out"
-        err = f"{entry['run_dir']}/logs/{args.job_id}.err"
-        if args.follow:
-            return ssh_login(host, 'tail -F "$1" "$2"', [out, err], tty=True).returncode
-        return ssh_login(host, 'tail -n 50 "$1" "$2"', [out, err], check=False).returncode
+    if not entry:
+        if args.follow or args.index is not None:
+            die(f"job {args.job_id} not in the local ledger; cannot locate its logs")
+        return ssh_login(host, 'exec bpeek "$1"', [args.job_id], check=False).returncode
+
+    logdir = f"{entry['run_dir']}/logs"
+    result = ssh_login(
+        host, 'find "$1" -maxdepth 1 -type f -name "$2*" -printf "%f\\n"',
+        [logdir, str(args.job_id)], check=False)
+    if result.returncode != 0:
+        die(f"could not list logs in {logdir}: {result.stderr.strip()}")
+    names = log_file_names(result.stdout.splitlines(), args.job_id, args.index)
+    if not names:
+        hint = f" (index {args.index})" if args.index is not None else ""
+        die(f"no logs{hint} found under {logdir}")
+    files = [f"{logdir}/{name}" for name in names]
+    print(f"hpc: logs {', '.join(names)}", file=sys.stderr)
     if args.follow:
-        die(f"job {args.job_id} not in the local ledger; cannot locate its log")
-    return ssh_login(host, 'exec bpeek "$1"', [args.job_id], check=False).returncode
+        return ssh_login(host, 'tail -F "$@"', files, tty=True).returncode
+    return ssh_login(host, 'tail -n 50 "$@"', files, check=False).returncode
 
 
 def cmd_pull(host: str, args: argparse.Namespace) -> int:
@@ -575,10 +642,16 @@ def cmd_pull(host: str, args: argparse.Namespace) -> int:
         die(f"job {args.job_id or ''} not in the local ledger; pass a job id from hpc submit")
     destination = Path(args.dest).expanduser() if args.dest else root / "runs" / entry["run_id"]
     destination.mkdir(parents=True, exist_ok=True)
-    result = run(["rsync", "-az", "--partial",
-                  f"{host}:{entry['run_dir']}/", f"{destination}/"])
+    command = ["rsync", "-az", "--partial"]
+    if not args.include_code:
+        command.append("--exclude=/code/")
+    command.extend([f"{host}:{entry['run_dir']}/", f"{destination}/"])
+    result = run(command)
     if result.returncode != 0:
         die(f"rsync failed with exit code {result.returncode}")
+    if not args.include_code:
+        print("hpc: excluded code/ (use --include-code to include it)",
+              file=sys.stderr)
     print(f"hpc: pulled {entry['run_dir']} → {destination}")
     return 0
 
@@ -687,21 +760,27 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--name", default=None)
     submit.add_argument("--queue", default=None, help="override the script's #BSUB -q")
     submit.add_argument("--allow-dirty", action="store_true")
+    submit.add_argument("--allow-uncapped", action="store_true",
+                        help="allow an array without a %K concurrency cap")
     submit.add_argument("--dry-run", action="store_true")
     submit.set_defaults(func=cmd_submit)
 
-    status = sub.add_parser("status", help="bstat/bjobs")
+    status = sub.add_parser("status", help="bjobs for all jobs, bstat for one")
     status.add_argument("job_id", nargs="?")
     status.set_defaults(func=cmd_status)
 
-    logs = sub.add_parser("logs", help="bpeek or follow the job log")
+    logs = sub.add_parser("logs", help="bpeek or tail the job logs")
     logs.add_argument("job_id")
     logs.add_argument("-f", "--follow", action="store_true")
+    logs.add_argument("--index", type=int, default=None,
+                      help="select one array element")
     logs.set_defaults(func=cmd_logs)
 
     pull = sub.add_parser("pull", help="rsync a run directory back")
     pull.add_argument("job_id", nargs="?")
     pull.add_argument("--dest", default=None)
+    pull.add_argument("--include-code", action="store_true",
+                      help="also pull the code/ snapshot")
     pull.set_defaults(func=cmd_pull)
 
     doctor = sub.add_parser("doctor", help="check local/remote prerequisites")
