@@ -119,5 +119,5 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Context: jobs survive SSH disconnects, but nobody notices completion/failure; the human had to monitor and prompt the agent, and a crashed job could be mistaken for running.
 - Decision: ship a two-layer MVP: `hpc watch` polls the ledger via `bjobs`, detects terminal states and stale RUN logs, and writes local events; `hpc events --unread` is the agent-facing feed. No job-side wrapper, auto-resubmit, `bkill`, or merge. Start under tmux; delete the commands and `.git/hpc/events*` to scrap it.
 - Alternatives: a subagent as the primary monitor (session-bound, cannot survive a closed CLI or sleep; rejected); job-side status wrapper first (useful later, but not needed for terminal-state detection; deferred); LSF email only (does not wake the agent or provide logs; rejected).
-- Refs: #41.
+- Refs: #41; PR #42.
 - Tags: hpc, monitoring, watcher, events, agent, workflow.
