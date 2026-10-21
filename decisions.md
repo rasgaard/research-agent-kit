@@ -95,5 +95,5 @@ Append-only log. Entries follow the `AGENTS.md` §1.8 format (date-title heading
 - Context: a login-node `snapshot_download` hung silently for 10 minutes with no cache growth, while the same project downloaded weights from compute nodes; the root cause was not isolated.
 - Decision: document the conditional login-node HF hang, its bounded xet/IPv4 checks, and the required “cache on compute, then run offline” ordering. Decline `hpc cache`/`hpc fetch` for now because cache path, revision, token, and job-dependency choices are project-specific; revisit if the friction recurs.
 - Alternatives: add a generic cache command now (scope creep and ambiguous semantics; rejected); declare login-node downloads blocked (cause unconfirmed; rejected); leave the trap undocumented (it silently wastes login-node time; rejected).
-- Refs: #37.
+- Refs: #37; PR #40.
 - Tags: hpc, huggingface, downloads, login-node, offline, workflow.
