@@ -1,6 +1,6 @@
 # AGENTS.md — reusable research template
 
-Contract v1.4 (2026-10-22).
+Contract v1.5 (2026-10-22).
 
 > Copy this file verbatim into other research repos — it contains no project-specific information. Anything specific to a repo (goals, stack, commands, file paths) lives in that repo's `README.md`; read it before starting work. This file is the collaboration contract between human and coding agent when working through GitHub (issues → branches → PRs). Keep it under ~150 lines: it loads every turn, so read-once material belongs in `skills/`, and stale rules get distilled, not appended.
 
@@ -63,6 +63,7 @@ Contract v1.4 (2026-10-22).
 - Manage env and deps with `uv` only (`uv add`, `uv sync`, `uv run`). Dev deps (e.g. `pytest`) go in `[dependency-groups] dev`, not in main `dependencies`.
 - Style: typed function signatures, short docstrings, `path:line` references when discussing code (e.g. `train.py:12`).
 - Tests: every behaviour change needs a test in `tests/` using the repo's runner (this kit uses stdlib `unittest`, no extra dependency: `python3 -m unittest discover -s tests -q`). Run the repo's test command (see README) and paste/attach the result in the PR.
+- Commits: `<type>: <imperative summary>` using `feat`, `fix`, `docs`, `test`, `refactor`, or `chore`; match the branch type and keep the subject under ~72 characters. Add a scope when useful, e.g. `fix(hpc): ...`. Merge commits are exempt.
 - Entry points: expose runnable work via `uv run <script>` or `uv run python -m <module>` so the human can reproduce with one command.
 
 ## 4. PR contract (what "done" looks like)
