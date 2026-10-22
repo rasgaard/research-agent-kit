@@ -85,3 +85,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: keep `bjobs -w` (no start time; noisy; rejected); parse fixed-width `bjobs` columns (fragile; rejected); use `bstat` for everything (no compact all-job view; rejected); include hosts by default (wide and rarely needed; rejected).
 - Refs: #60; PR #61.
 - Tags: hpc, cli, status, ux.
+
+## 2026-10-22 — Verify SSH master health with a bounded remote probe
+
+- Context: `ssh -O check` can report success for a stale master after sleep or a network change, so `hpc login`/`ensure` claimed authentication while subsequent commands failed.
+- Decision: `ensure` follows the socket check with a 10 s `BatchMode=yes` remote `true` probe; a stale master is closed and re-authenticated, or fails with `ssh -O exit ... && hpc login` when opening is disabled. The wait loop is deadline-based and never reports the master up until both checks pass.
+- Alternatives: trust `ssh -O check` (the bug; rejected); always start a new master (ControlSocket conflict; rejected); drop multiplexing (breaks one-auth-per-session; rejected); prompt during the probe (watchers cannot authenticate; rejected).
+- Refs: #44.
+- Tags: hpc, auth, ssh, reliability.
