@@ -158,13 +158,17 @@ not cross; only the submitted script and its remote files travel.
 
 ```sh
 hpc secret set OPENROUTER_API_KEY
+# or, for a repo-scoped key:
+# hpc secret set --project OPENROUTER_API_KEY
 # job script:
 [ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
+[ -f "{{PROJECT_SECRETS}}" ] && . "{{PROJECT_SECRETS}}"
 ```
 
-Never pass the value on the command line or commit it. If the file exists but is
-not mode 600, `hpc doctor` flags it; fix with `chmod 600 ~/.config/dtu-hpc/secrets.env`
-on the cluster.
+Never pass the value on the command line or commit it. For a project-scoped
+key, use `hpc secret set --project NAME` and source `{{PROJECT_SECRETS}}` after
+`{{SECRETS}}`. If a secrets file exists but is not mode 600, `hpc doctor` flags
+it; fix with `chmod 600` on the reported path.
 
 ## `hpc doctor` says the socket is stale
 

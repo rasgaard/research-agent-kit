@@ -9,7 +9,7 @@ Rule: **git is the code source of truth; HF (or an explicit path) is the data so
 1. Refuses a dirty tree (or warns with `--allow-dirty`) and resolves `HEAD`.
 2. Streams `git archive --format=tar.gz <sha>` over SSH into
    `/work3/$USER/hpc/<repo>/jobs/<timestamp>-<sha8>/code`.
-3. Renders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}` into the job script and submits it.
+3. Renders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}`, `{{PROJECT_SECRETS}}` into the job script and submits it.
 
 Consequences:
 
@@ -74,23 +74,37 @@ uv run --frozen --no-sync python -u train.py
 Local exports do **not** cross `hpc submit`: it starts a fresh SSH login shell. Store keys on the cluster instead:
 
 ```sh
-hpc secret set OPENROUTER_API_KEY     # prompts; or: printf '%s\n' "$KEY" | hpc secret set OPENROUTER_API_KEY
-hpc secret list                        # names only
+hpc secret set OPENROUTER_API_KEY     # user-wide; prompts or pipe on stdin
+hpc secret set --project WANDB_API_KEY  # scoped to this repo's origin
+hpc secret list                        # user-wide names
+hpc secret list --project              # project names
+hpc secret list --all                  # both, grouped
 ```
 
-The file is `~/.config/dtu-hpc/secrets.env` on the cluster, mode 600. Source it from the job, normally near the top:
+User-wide secrets live in `~/.config/dtu-hpc/secrets.env`; project secrets live in
+`~/.config/dtu-hpc/projects/<repo-key>.env`, where `<repo-key>` is the repo name
+plus a short hash of the `origin` URL. Both are mode 600. Source them from the
+job, normally near the top, in this order so project values win:
 
 ```sh
 [ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
+[ -f "{{PROJECT_SECRETS}}" ] && . "{{PROJECT_SECRETS}}"
 python -u train.py
 ```
 
-Values never appear in argv, the repo, or the CLI log. `hpc secret set` takes a remote lock, merges one key, writes a mode-600 temporary file, and atomically replaces the file; it aborts if the existing file cannot be read and does not print the value.
+Values never appear in argv, the repo, or the CLI log. `hpc secret set` takes a
+remote lock, merges one key, writes a mode-600 temporary file, and atomically
+replaces the file; it aborts if the existing file cannot be read and does not
+print the value.
+
+Project scoping is organizational: every job runs as your DTU Unix user and can
+read any project file it knows the path to. Use separate Unix users or
+containers if you need a real access boundary.
 
 ## Results
 
 - Small metrics → `experiments.jsonl` or Trackio; commit them via a PR.
-- Large artefacts → upload from the HPC job to a private HF repo **or bucket** (write token scoped to that target, stored on the cluster via `hpc secret set`, mode 600).
+- Large artefacts → upload from the HPC job to a private HF repo **or bucket** (write token scoped to that target, stored on the cluster via `hpc secret set` or `hpc secret set --project`, mode 600).
 - Per-run manifest (recommended in the job script):
 
 ```json

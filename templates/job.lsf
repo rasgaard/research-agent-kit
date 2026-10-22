@@ -1,7 +1,8 @@
 #!/bin/sh
 # DTU LSF job template. hpc renders the placeholders below and env paths.
 # Copy to jobs/<name>.lsf and edit the BSUB block; the CLI refuses a dirty tree.
-# Env placeholders: {{VENV}}, {{HF_HOME}}, {{UV_CACHE}}, {{SECRETS}}.
+# Env placeholders: {{VENV}}, {{HF_HOME}}, {{UV_CACHE}}, {{SECRETS}},
+# {{PROJECT_SECRETS}}.
 
 #BSUB -q gpua100
 #BSUB -J {{JOB_NAME}}
@@ -22,5 +23,6 @@ export PATH="$HOME/.local/bin:$PATH"
 export UV_PROJECT_ENVIRONMENT="{{VENV}}"
 export HF_HOME="{{HF_HOME}}"
 [ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
+[ -f "{{PROJECT_SECRETS}}" ] && . "{{PROJECT_SECRETS}}"
 
 uv run --frozen --no-sync python -u train.py --out "{{RUN_DIR}}/output"
