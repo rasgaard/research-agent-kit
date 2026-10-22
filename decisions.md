@@ -109,3 +109,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: replace the global file entirely (breaks user-wide credentials; rejected); per-project config files on the Mac (does not travel to jobs; rejected); no hash suffix (same-named repos collide; rejected); claim access isolation (same Unix user can read every project file; rejected).
 - Refs: #64; PR #65.
 - Tags: hpc, secrets, scopes, security, config.
+
+## 2026-10-22 — Bootstrap from the installed skill; parse included SSH configs
+
+- Context: the documented bootstrap path resolved `AGENTS.md` two levels above the installed skill symlink (the skills directory, not the kit), omitted the HPC templates and `.gitignore`/`experiments.jsonl`, and `hpc init` missed aliases placed in `~/.ssh/config.d/` through `Include`.
+- Decision: resolve the skill with `realpath` and run a stdlib-only `bootstrap.py` that copies the contract, ignore file, README skeleton, `.github/`, and LSF/SSH templates, creates `experiments.jsonl`, and supports `--dry-run`/`--force`. `dtu_aliases()` recursively expands relative/globbed `Include` files with a cycle guard. New project READMEs include the HPC quickstart and keep `runs/` ignored.
+- Alternatives: keep teaching manual copies (drifts from the kit; rejected); use `ssh -G` for alias discovery (extra host/alias assumptions; rejected); vendor `bin/hpc` into every project (duplicates the CLI; rejected); require `--ssh-host` in the main flow (defeats detection; rejected).
+- Refs: #47; PR #66.
+- Tags: bootstrap, skills, ssh, docs, workflow.
