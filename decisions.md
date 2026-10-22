@@ -117,3 +117,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: keep teaching manual copies (drifts from the kit; rejected); use `ssh -G` for alias discovery (extra host/alias assumptions; rejected); vendor `bin/hpc` into every project (duplicates the CLI; rejected); require `--ssh-host` in the main flow (defeats detection; rejected).
 - Refs: #47; PR #66.
 - Tags: bootstrap, skills, ssh, docs, workflow.
+
+## 2026-10-22 — Use one mutable project venv with an env manifest
+
+- Context: #50 found `sync-env` contradicted the login-node rule and the ledger could not identify the package state; #67 then exposed the forced 3.11.9 interpreter breaking projects that require >=3.12.
+- Decision: keep one mutable venv per project. Hash the environment inputs from `HEAD`, store an atomic remote manifest with input/lock/SHA/timestamp and uv/Python versions, no-op when it matches, and otherwise run bounded `uv sync --locked`. `submit` and `doctor` fail stale/missing envs; the ledger records the env identity. Let uv resolve Python from `.python-version`/`requires-python` instead of forcing a login module.
+- Alternatives: per-lock venvs (hardlinks made same-lock copies cheap, but retention/disk complexity; rejected); queued CPU build (queue wait blocks onboarding; rejected); force the login Python with `--python` (breaks >=3.12; rejected); auto-sync during submit (races and hides changes; rejected); adopt manifest-less venvs (cannot prove identity; deferred).
+- Refs: #50, #67; PR #68.
+- Tags: hpc, sync-env, venv, manifest, python, reproducibility, workflow.

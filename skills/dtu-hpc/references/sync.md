@@ -14,7 +14,7 @@ Rule: **git is the code source of truth; HF (or an explicit path) is the data so
 Consequences:
 
 - No git clone, fetch, deploy key, or GitHub token on the HPC.
-- Every run is reproducible from the SHA recorded in `.git/hpc/jobs.jsonl`.
+- Each run's ledger entry records the code SHA, env input/lock hashes, venv path, sync timestamp, and `uv`/Python versions. The venv is mutable: a later sync changes it, so the entry identifies the environment but does not freeze it. To rerun, use the recorded SHA/lock and build a separate env.
 - Only tracked files are shipped; uncommitted experiments cannot leak into a run.
 - The remote code directory is read-only in spirit: never edit it; commit and resubmit.
 
@@ -55,19 +55,29 @@ A bucket id looks like `user/name`, which makes the confusion easy. See
 
 ## Python env: one shared uv venv on /work3
 
-Compute nodes have PyPI/HF access (verified on `p1`), but re-downloading torch per job is waste. `hpc sync-env` ships `HEAD` to `env/<timestamp>-<sha8>/` and runs `uv sync --frozen` on the login node into the configured `venv` (default `/work3/$USER/hpc/venvs/<repo>`). Run it once after `hpc init`, and again whenever `uv.lock` changes. The job uses `{{VENV}}` and `{{UV_CACHE}}` so it does not rebuild.
+Re-downloading torch per job is waste, so each project has **one mutable venv** (default `/work3/$USER/hpc/venvs/<repo>`), not one per job or per lock. `hpc sync-env` hashes the environment inputs from `HEAD` (`uv.lock`, `pyproject.toml`, `.python-version`, and `uv.toml` when present) and stores a manifest beside the venv (`<venv>.hpc-env.json`) with the input hash, lock hash, code SHA, sync timestamp, and `uv`/Python versions. It is a no-op when the venv exists and the manifest matches; otherwise it ships `HEAD` to `env/<timestamp>-<sha8>/` and runs `uv sync --locked`.
+
+The login node is an explicit, bounded exception for this package sync: queue wait would block onboarding, and the sync is short and cached. It runs once per environment-input change, never for code-only commits, and is capped with `timeout 600`. Do not use it for HF datasets or model weights.
+
+`hpc submit` refuses a missing, stale, or manifest-less venv and tells you to run `hpc sync-env`. The ledger records `venv`, `lock_sha256`, `env_input_sha256`, `env_synced_at`, and the `uv`/Python versions. A later sync changes the shared env for every job that uses it, so avoid syncing while jobs are queued or running; an old job cannot be made reproducible from its SHA alone.
 
 `examples/hf-smoke/` is the working reference; first sync was ~66 s, subsequent `uv sync` audited 72 packages in 183 ms. The equivalent manual commands (for debugging only) are:
 
 ```sh
-module load python3/3.11.9
 export PATH="$HOME/.local/bin:$PATH"       # uv lives in ~/.local/bin
 export UV_PYTHON_DOWNLOADS=never
 export UV_CACHE_DIR="/work3/$USER/.cache/uv"
 export UV_PROJECT_ENVIRONMENT="/work3/$USER/hpc/venvs/<repo>"
-uv sync --frozen --python "$(command -v python3)"
+uv sync --locked                             # interpreter from .python-version/requires-python
 uv run --frozen --no-sync python -u train.py
 ```
+
+The sync does not load or pin a login-node Python module. `uv` resolves the
+interpreter from `.python-version` / `requires-python`; with downloads disabled
+it uses an already-installed uv-managed interpreter. If none satisfies the
+project, install one explicitly (e.g. `uv python install 3.12`) and rerun; the
+error names the requirement instead of silently building against the login
+node's default.
 
 ## Secrets: write remotely, source in the job
 

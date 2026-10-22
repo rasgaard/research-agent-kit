@@ -14,7 +14,7 @@ Local-first workflow: edit and test on the Mac, ship an immutable `git archive` 
 ```text
 hpc init                 # detect the DTU SSH alias; write config
 hpc login                # one Terminal auth for this session
-hpc sync-env             # once in a project with uv.lock; build the shared venv
+hpc sync-env             # build/sync the shared venv when env inputs change (no-op otherwise)
 hpc doctor               # local + remote checks
 hpc stage                # optional interactive smoke
 ```
@@ -22,7 +22,7 @@ hpc stage                # optional interactive smoke
 ## Preconditions
 
 - `hpc init` has written `~/.config/dtu-hpc/config.ini`; pass `--ssh-host <alias>` if `~/.ssh/config` is not detected.
-- `hpc doctor` is all `ok` (local git/ssh/rsync, live master socket, remote `bsub`/`bstat`/`rsync`/`uv`, synced venv; missing global/project secrets files are notes, a wrong mode fails).
+- `hpc doctor` is all `ok` (local git/ssh/rsync, live master socket, remote `bsub`/`bstat`/`rsync`/`uv`, venv matching the current environment inputs (`uv.lock`, `pyproject.toml`, `.python-version`, `uv.toml`); missing global/project secrets files are notes, a wrong mode fails).
 - If the socket is dead or stale, `hpc login` opens a visible Terminal; the human types the DTU password. Never store it, never use `sshpass`. `hpc doctor` never prompts.
 - Batch work runs under LSF and is unaffected by SSH drops. Interactive work belongs in `tmux`.
 
@@ -44,7 +44,7 @@ hpc stage                # optional interactive smoke
 ```text
 hpc init [--ssh-host A]    # write config; detect a DTU alias in ~/.ssh/config
 hpc login                  # ensure master socket (opens Terminal if re-auth needed)
-hpc sync-env               # ship HEAD and uv sync into the configured shared venv
+hpc sync-env [--force]     # sync the shared venv; no-op when the env manifest matches
 hpc secret set NAME        # set a user-wide secret via stdin/prompt; mode 600
 hpc secret set --project NAME  # set a repo-scoped secret
 hpc secret list [--project|--all]  # names only; default is global
@@ -74,8 +74,8 @@ hpc events [--unread] [--json] # agent-facing event feed
 
 ## Guardrails
 
-- Never run applications on the login node; only submit and inspect.
-- Heavy downloads (HF weights, pip packages) belong on compute nodes. If a login-node HF download hangs, stop and submit a short cache job; set `HF_HUB_OFFLINE=1` only after that job has populated `HF_HOME`. Bound any login-node cache test with `timeout 60`.
+- Never run training or applications on the login node; only submit and inspect.
+- `hpc sync-env` is the bounded exception: one `uv sync --locked` per environment-input change, using the UV cache, with a 10-minute timeout. It is for Python packages only — HF weights/datasets still belong on compute nodes. If a login-node HF download hangs, stop and submit a short cache job; set `HF_HUB_OFFLINE=1` only after that job has populated `HF_HOME`. Bound any login-node cache test with `timeout 60`.
 - Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `bkill` duplicates. Never kill a pending/running job solely to chase a shorter queue.
 - Never put tokens, keys, or the DTU password in the repo or job scripts. Local `export` does not cross `hpc submit`; use `hpc secret set NAME` (or `--project`), then source `{{SECRETS}}` and `{{PROJECT_SECRETS}}` in the job (see `references/sync.md`). Project scoping is organizational, not an access boundary.
 - Code is immutable per run: if you need a change, commit and submit a new job; do not edit `{{CODE_DIR}}`.

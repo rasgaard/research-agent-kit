@@ -1,6 +1,7 @@
 """Stubbed tests for bin/hpc — no network, no real SSH, no HPC."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -43,6 +44,8 @@ class HpcCliTest(unittest.TestCase):
                 exit 0 ;;
               *"bsub"*) printf 'Job <123> is submitted to queue <gpua100>.\\n' ;;
               *"-json"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
+              *"hpc-env.json"*) [ -n "${HPC_TEST_ENV_MANIFEST:-}" ] && cat "$HPC_TEST_ENV_MANIFEST" ;;
+              *"uv --version"*) printf 'uv 0.8.0\\nPython 3.12.0\\n' ;;
               *"cat --"*"/projects/"*) [ -n "${HPC_TEST_PROJECT_SECRETS:-}" ] && cat "$HPC_TEST_PROJECT_SECRETS" ;;
               *"cat --"*) [ -n "${HPC_TEST_SECRETS:-}" ] && cat "$HPC_TEST_SECRETS" ;;
               *"bstat"*) printf 'JOBID USER QUEUE JOB_NAME NALLOC STAT\\n' ;;
@@ -63,6 +66,7 @@ class HpcCliTest(unittest.TestCase):
         (self.stub_bin / "rsync").chmod(0o755)
         self.config = base / "config.ini"
         self.config.write_text("[hpc]\nhost = test\nremote_root = /work3/{user}/hpc/{repo}\n")
+        self.env_manifest = base / "env-manifest.json"
         self.git("init", "-q")
         self.git("config", "user.email", "test@example.com")
         self.git("config", "user.name", "test")
@@ -73,12 +77,37 @@ class HpcCliTest(unittest.TestCase):
             echo "sha={{SHA}} run={{RUN_DIR}}"
             """))
         (self.repo / "train.py").write_text("print('hi')\n")
+        (self.repo / "uv.lock").write_text("version = 1\n")
         self.git("add", ".")
         self.git("commit", "-qm", "initial")
+        self.write_env_manifest()
 
     def git(self, *args: str) -> None:
         subprocess.run(["git", *args], cwd=self.repo, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def env_input_sha(self) -> str:
+        material = ""
+        for name in ("pyproject.toml", "uv.lock", ".python-version", "uv.toml"):
+            path = self.repo / name
+            if path.is_file():
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                material += f"{name}\0{digest}\n"
+        return hashlib.sha256(material.encode()).hexdigest()
+
+    def write_env_manifest(self, lock_sha: str | None = None,
+                           venv: str = "/work3/tester/hpc/venvs/proj") -> None:
+        lock_sha = lock_sha or hashlib.sha256(
+            (self.repo / "uv.lock").read_bytes()).hexdigest()
+        self.env_manifest.write_text(json.dumps({
+            "input_sha256": self.env_input_sha(),
+            "lock_sha256": lock_sha,
+            "sha": "deadbeef",
+            "venv": venv,
+            "synced_at": "2026-10-22T00:00:00+00:00",
+            "uv_version": "uv 0.8.0",
+            "python_version": "Python 3.12.0",
+        }))
 
     def write_job(self, content: str) -> None:
         (self.repo / "job.lsf").write_text(textwrap.dedent(content))
@@ -105,6 +134,7 @@ class HpcCliTest(unittest.TestCase):
             "HPC_NO_OPEN": "1",
             "HPC_TEST_LOG": str(self.log),
             "HPC_TEST_STDIN": str(self.stdin_log),
+            "HPC_TEST_ENV_MANIFEST": str(self.env_manifest),
             "HOME": str(self.home),
             "PATH": f"{self.stub_bin}{os.pathsep}{env['PATH']}",
         })
@@ -128,6 +158,13 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(entry["queue"], "gpua100")
         self.assertIn(entry["branch"], {"main", "master"})
         self.assertIn("/work3/tester/hpc/proj/jobs/", entry["run_dir"])
+        self.assertEqual(entry["venv"], "/work3/tester/hpc/venvs/proj")
+        self.assertEqual(entry["lock_sha256"],
+                         hashlib.sha256((self.repo / "uv.lock").read_bytes()).hexdigest())
+        self.assertEqual(entry["env_input_sha256"], self.env_input_sha())
+        self.assertEqual(entry["env_synced_at"], "2026-10-22T00:00:00+00:00")
+        self.assertEqual(entry["uv_version"], "uv 0.8.0")
+        self.assertEqual(entry["python_version"], "Python 3.12.0")
         log = self.log.read_text()
         self.assertIn("tar -xzf", log)
         self.assertIn("bsub", log)
@@ -706,12 +743,64 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "P")
 
-    def test_sync_env_uses_shared_venv(self) -> None:
+    def test_sync_env_skips_when_manifest_matches(self) -> None:
         result = self.hpc("sync-env")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("up to date", result.stdout)
         log = self.log.read_text()
-        self.assertIn("uv sync --frozen", log)
+        self.assertNotIn("uv sync", log)
+        self.assertNotIn("tar -xzf", log)
+
+    def test_sync_env_rebuilds_and_writes_manifest(self) -> None:
+        missing = Path(self.tmp.name) / "missing-manifest.json"
+        result = self.hpc("sync-env", extra_env={"HPC_TEST_ENV_MANIFEST": str(missing)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn("timeout 600 uv sync --locked", log)
+        self.assertNotIn("--python", log)
+        self.assertNotIn("module load python3/3.11.9", log)
         self.assertIn("/work3/tester/hpc/venvs/proj", log)
+        self.assertIn("hpc-env.json", log)
+        manifest = self.stdin_log.read_text(errors="replace")
+        self.assertIn("lock_sha256", manifest)
+        self.assertIn("uv_version", manifest)
+        self.assertIn("python_version", manifest)
+
+    def test_submit_refuses_stale_env(self) -> None:
+        (self.repo / "uv.lock").write_text("version = 2\n")
+        self.git("add", "uv.lock")
+        self.git("commit", "-qm", "bump lock")
+        result = self.hpc("submit", "job.lsf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale for the current env inputs", result.stderr)
+        self.assertIn("hpc sync-env", result.stderr)
+        self.assertNotIn("bsub", self.log.read_text())
+
+    def test_submit_refuses_python_version_change(self) -> None:
+        (self.repo / ".python-version").write_text("3.12\n")
+        self.git("add", ".python-version")
+        self.git("commit", "-qm", "bump python")
+        result = self.hpc("submit", "job.lsf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale for the current env inputs", result.stderr)
+        self.assertNotIn("bsub", self.log.read_text())
+
+    def test_submit_refuses_missing_env_manifest(self) -> None:
+        self.env_manifest.unlink()
+        result = self.hpc("submit", "job.lsf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no env manifest", result.stderr)
+        self.assertIn("hpc sync-env", result.stderr)
+        self.assertNotIn("bsub", self.log.read_text())
+
+    def test_doctor_reports_stale_env(self) -> None:
+        (self.repo / "uv.lock").write_text("version = 2\n")
+        self.git("add", "uv.lock")
+        self.git("commit", "-qm", "bump lock")
+        result = self.hpc("doctor")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("stale", result.stdout)
+        self.assertIn("hpc sync-env", result.stdout)
 
     def test_dry_run_renders_env_placeholders(self) -> None:
         (self.repo / "job.lsf").write_text(
@@ -724,6 +813,22 @@ class HpcCliTest(unittest.TestCase):
         self.assertIn("/work3/<user>/hf", result.stdout)
         self.assertIn("$HOME/.config/dtu-hpc/secrets.env", result.stdout)
         self.assertIn("/projects/", result.stdout)
+
+
+class SyncPolicyDocsTest(unittest.TestCase):
+    def test_docs_agree_on_single_venv_and_bounded_sync(self) -> None:
+        skill = (REPO / "skills" / "dtu-hpc" / "SKILL.md").read_text()
+        sync = (REPO / "skills" / "dtu-hpc" / "references" / "sync.md").read_text()
+        self.assertIn("one mutable venv", sync)
+        self.assertIn("uv sync --locked", sync)
+        self.assertIn("timeout 600", sync)
+        self.assertIn("env_input_sha256", sync)
+        self.assertIn("`uv`/Python versions", sync)
+        self.assertNotIn("module load python3/3.11.9", sync)
+        self.assertNotIn("uv sync --locked --python", sync)
+        self.assertIn("bounded exception", skill)
+        self.assertIn("uv sync --locked", skill)
+        self.assertNotIn("pip packages) belong", skill)
 
 
 class RenderValuesTest(unittest.TestCase):
