@@ -31,7 +31,7 @@ Host dtu
 - `hpc init` detects this `Host` block and writes `~/.config/dtu-hpc/config.ini`; use `--ssh-host <alias>` if the parser misses an included file.
 - `ssh-add --apple-use-keychain ~/.ssh/gbar` stores the **key passphrase** in the macOS Keychain (Touch ID/unlock). The DTU password is still typed once.
 - The first `ssh dtu` asks passphrase + DTU password. All later `ssh`, `scp`, `rsync`, `bsub` calls reuse the socket with no prompt.
-- macOS sleep or a network change kills the socket. `hpc login` detects this, opens a visible Terminal running `ssh -M -N -f dtu`, and waits. Re-authenticate once; work resumes. `hpc doctor` never prompts: a dead or stale master tells you to run `hpc login`.
+- macOS sleep or a network change can leave a stale socket. `hpc login`/`hpc ensure` run a bounded `BatchMode=yes` remote probe; if it fails, the stale master is closed and authentication is reopened, or you get the exact `ssh -O exit ... && hpc login` command. `hpc doctor` never prompts: a dead or stale master tells you to run `hpc login`.
 - Do **not** use `autossh` with a stored password or `sshpass`: it turns a secure second factor into a file on disk.
 
 ## Interactive work

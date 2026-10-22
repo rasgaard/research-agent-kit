@@ -560,6 +560,28 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("host = my-dtu", self.config.read_text())
 
+    def test_ensure_healthy_master_probes_remote(self) -> None:
+        result = self.hpc("ensure", extra_env={"HPC_NO_OPEN": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn("-O check", log)
+        self.assertIn("true", log)
+
+    def test_login_refuses_stale_master(self) -> None:
+        result = self.hpc("login", extra_env={
+            "HPC_NO_OPEN": "1", "HPC_TEST_STALE": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale", result.stderr)
+        self.assertIn("hpc login", result.stderr)
+        self.assertNotIn("authenticated", result.stdout)
+        self.assertNotIn("is up", result.stderr)
+
+    def test_ensure_missing_master(self) -> None:
+        result = self.hpc("ensure", extra_env={
+            "HPC_NO_OPEN": "1", "HPC_TEST_DEAD": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no SSH master", result.stderr)
+
     def test_doctor_stale_socket_points_to_login(self) -> None:
         result = self.hpc("doctor", extra_env={"HPC_TEST_STALE": "1"})
         self.assertEqual(result.returncode, 1)
