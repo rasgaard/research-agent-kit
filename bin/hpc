@@ -629,26 +629,6 @@ def ship_snapshot(host: str, root: Path, sha: str, destination: str) -> None:
         die(extract.stderr.decode(errors="replace").strip() or "failed to ship code snapshot")
 
 
-def merge_env(text: str, name: str, value: str) -> str:
-    """Return env-file text with NAME set, preserving unrelated lines."""
-    lines = [line for line in text.splitlines() if line.strip()]
-    output: list[str] = []
-    found = False
-    for line in lines:
-        if line.lstrip().startswith("#") or "=" not in line:
-            output.append(line)
-            continue
-        key = line.split("=", 1)[0].strip()
-        if key == name:
-            output.append(f"{name}={value}")
-            found = True
-        else:
-            output.append(line)
-    if not found:
-        output.append(f"{name}={value}")
-    return "\n".join(output) + "\n"
-
-
 def extract_queue(text: str) -> str:
     match = re.search(r"^#BSUB\s+-q\s+(\S+)", text, re.MULTILINE)
     return match.group(1) if match else "default"
@@ -797,9 +777,76 @@ SECRET_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 EXPAND_PATH = r'f="$1"; f="${f/#\~/$HOME}"; f="${f/#\$HOME/$HOME}"'
 
 
-def remote_read(host: str, path: str) -> str:
-    result = ssh_login(host, EXPAND_PATH + '; test -f "$f" && cat "$f" || true',
-                       [path], check=False)
+SECRET_WRITE = r'''set -eu
+umask 077
+f="$1"
+f="${f/#\~/$HOME}"
+f="${f/#\$HOME/$HOME}"
+mkdir -p "$(dirname "$f")"
+if ! command -v flock >/dev/null 2>&1; then
+  printf 'hpc: flock is required for atomic secret updates\n' >&2
+  exit 1
+fi
+lock="$f.lock"
+exec 9>"$lock"
+chmod 600 "$lock" 2>/dev/null || true
+flock 9
+IFS= read -r name
+IFS= read -r value
+existing=""
+if [ -e "$f" ]; then
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+    printf 'hpc: cannot read existing secrets file: %s\n' "$f" >&2
+    exit 1
+  fi
+  existing=$(cat -- "$f") || {
+    printf 'hpc: cannot read existing secrets file: %s\n' "$f" >&2
+    exit 1
+  }
+fi
+tmp=$(mktemp "${f}.tmp.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+found=0
+{
+  if [ -n "$existing" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        ''|'#'*) printf '%s\n' "$line" ;;
+        *'='*)
+          key=${line%%=*}
+          key=${key#"${key%%[![:space:]]*}"}
+          key=${key%"${key##*[![:space:]]}"}
+          if [ "$key" = "$name" ]; then
+            printf '%s=%s\n' "$name" "$value"
+            found=1
+          else
+            printf '%s\n' "$line"
+          fi ;;
+        *) printf '%s\n' "$line" ;;
+      esac
+    done <<< "$existing"
+  fi
+  if [ "$found" -eq 0 ]; then
+    printf '%s=%s\n' "$name" "$value"
+  fi
+} > "$tmp"
+chmod 600 "$tmp"
+mv -f "$tmp" "$f"
+trap - EXIT
+'''
+
+
+def remote_read(host: str, path: str) -> Optional[str]:
+    result = ssh_login(
+        host,
+        EXPAND_PATH + '; if [ ! -e "$f" ]; then exit 44; fi; cat -- "$f"',
+        [path],
+        check=False,
+    )
+    if result.returncode == 44:
+        return None
+    if result.returncode != 0:
+        die(result.stderr.strip() or f"could not read {path} on {host}")
     return result.stdout
 
 
@@ -821,10 +868,8 @@ def cmd_secret_set(host: str, args: argparse.Namespace) -> int:
         print(f"hpc: would set {args.name} in {path} on {host} (no value shown)")
         return 0
     ensure(host)
-    merged = merge_env(remote_read(host, path), args.name, shlex.quote(value))
-    script = (EXPAND_PATH + '; umask 077; mkdir -p "$(dirname "$f")"; '
-              'cat > "$f"; chmod 600 "$f"')
-    ssh_login(host, script, [path], input=merged, check=True)
+    payload = f"{args.name}\n{shlex.quote(value)}\n"
+    ssh_login(host, SECRET_WRITE, [path], input=payload, check=True)
     print(f"hpc: set {args.name} in {path} on {host} (mode 600)")
     return 0
 
@@ -832,9 +877,14 @@ def cmd_secret_set(host: str, args: argparse.Namespace) -> int:
 def cmd_secret_list(host: str, _args: argparse.Namespace) -> int:
     ensure(host)
     path = load_config().get("secrets", DEFAULT_SECRETS)
-    names = [line.split("=", 1)[0].strip()
-             for line in remote_read(host, path).splitlines()
-             if "=" in line and not line.lstrip().startswith("#")]
+    text = remote_read(host, path)
+    names = []
+    for line in (text or "").splitlines():
+        if line.lstrip().startswith("#") or "=" not in line:
+            continue
+        name = line.split("=", 1)[0].strip()
+        if SECRET_NAME.match(name):
+            names.append(name)
     print("\n".join(names) if names else "(no secrets)")
     return 0
 

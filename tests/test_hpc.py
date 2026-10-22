@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,7 @@ class HpcCliTest(unittest.TestCase):
                 exit 0 ;;
               *"bsub"*) printf 'Job <123> is submitted to queue <gpua100>.\\n' ;;
               *"-json"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
+              *"cat --"*) [ -n "${HPC_TEST_SECRETS:-}" ] && cat "$HPC_TEST_SECRETS" ;;
               *"bstat"*) printf 'JOBID USER QUEUE JOB_NAME NALLOC STAT\\n' ;;
               *"bjobs"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
               *"%T@"*) [ -n "${HPC_TEST_LOG_STATS:-}" ] && cat "$HPC_TEST_LOG_STATS" ;;
@@ -609,17 +611,22 @@ class HpcCliTest(unittest.TestCase):
         result = self.hpc("secret", "set", "OPENROUTER_API_KEY", "--file", str(value))
         self.assertEqual(result.returncode, 0, result.stderr)
         written = self.stdin_log.read_text()
-        self.assertIn("OPENROUTER_API_KEY=sk-test-value", written)
-        self.assertIn("chmod 600", self.log.read_text())
+        self.assertIn("OPENROUTER_API_KEY\n", written)
+        self.assertIn("sk-test-value", written)
+        log = self.log.read_text()
+        self.assertIn("mktemp", log)
+        self.assertIn("mv -f", log)
+        self.assertIn("flock", log)
+        self.assertIn("chmod 600", log)
         self.assertNotIn("sk-test-value", result.stdout + result.stderr)
-        self.assertNotIn("sk-test-value", self.log.read_text())
+        self.assertNotIn("sk-test-value", log)
 
     def test_secret_quotes_values_with_spaces(self) -> None:
         value = Path(self.tmp.name) / "value.txt"
         value.write_text("sk test value\n")
         result = self.hpc("secret", "set", "K", "--file", str(value))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("K='sk test value'", self.stdin_log.read_text())
+        self.assertIn("'sk test value'", self.stdin_log.read_text())
         self.assertNotIn("sk test value", self.log.read_text())
 
     def test_secret_dry_run_hides_value_and_skips_ssh(self) -> None:
@@ -629,6 +636,13 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("sk-test-value", result.stdout + result.stderr)
         self.assertFalse(self.log.exists())
+
+    def test_secret_list_parses_only_valid_names(self) -> None:
+        secrets = Path(self.tmp.name) / "remote-secrets"
+        secrets.write_text("# comment\nA=1\nnoise without equals\nB=2\n")
+        result = self.hpc("secret", "list", extra_env={"HPC_TEST_SECRETS": str(secrets)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip().splitlines(), ["A", "B"])
 
     def test_sync_env_uses_shared_venv(self) -> None:
         result = self.hpc("sync-env")
@@ -661,14 +675,60 @@ class RenderValuesTest(unittest.TestCase):
         self.assertEqual(values["SECRETS"], "$HOME/.config/dtu-hpc/secrets.env")
 
 
-class MergeEnvTest(unittest.TestCase):
-    def test_preserves_comments_and_replaces_key(self) -> None:
+class SecretWriteScriptTest(unittest.TestCase):
+    def setUp(self) -> None:
         import runpy
         import types
-        module = types.SimpleNamespace(**runpy.run_path(str(HPC), run_name="hpc_cli"))
-        text = "# keep me\nA=1\nB=2\n"
-        self.assertEqual(module.merge_env(text, "B", "3"), "# keep me\nA=1\nB=3\n")
-        self.assertEqual(module.merge_env(text, "C", "4"), "# keep me\nA=1\nB=2\nC=4\n")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "secrets.env"
+        fake_bin = Path(self.tmp.name) / "bin"
+        fake_bin.mkdir()
+        flock = fake_bin / "flock"
+        flock.write_text("#!/bin/sh\nexit 0\n")
+        flock.chmod(0o755)
+        self.env = os.environ.copy()
+        self.env["PATH"] = f"{fake_bin}{os.pathsep}{self.env['PATH']}"
+        self.module = types.SimpleNamespace(
+            **runpy.run_path(str(HPC), run_name="hpc_cli")
+        )
+
+    def run_script(self, name: str, value: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", "-c", self.module.SECRET_WRITE, "hpc", str(self.path)],
+            input=f"{name}\n{shlex.quote(value)}\n",
+            text=True,
+            capture_output=True,
+            env=self.env,
+        )
+
+    def test_creates_missing_file_with_mode_600(self) -> None:
+        result = self.run_script("K", "sk-test")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.path.read_text(), "K=sk-test\n")
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+
+    def test_preserves_other_lines_and_replaces_key(self) -> None:
+        self.path.write_text("# keep\nA=1\nK=old\nNOISE\n")
+        self.path.chmod(0o644)
+        result = self.run_script("K", "sk test")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.path.read_text(), "# keep\nA=1\nK='sk test'\nNOISE\n"
+        )
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+
+    def test_refuses_unreadable_existing_file(self) -> None:
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root can read mode 000 files")
+        self.path.write_text("A=1\n")
+        self.path.chmod(0)
+        result = self.run_script("K", "sk-test")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot read existing secrets file", result.stderr)
+        self.path.chmod(0o600)
+        self.assertEqual(self.path.read_text(), "A=1\n")
+        self.assertEqual(list(self.path.parent.glob("secrets.env.tmp.*")), [])
 
 
 if __name__ == "__main__":

@@ -71,7 +71,7 @@ hpc logs <job-id> -f
 hpc pull <job-id>
 ```
 
-Set a job secret without putting it in argv or the repo (prompts, or pipe via stdin; written mode 600 on the cluster): `hpc secret set OPENROUTER_API_KEY`.
+Set a job secret without putting it in argv or the repo (prompts, or pipe via stdin; written atomically, mode 600, on the cluster): `hpc secret set OPENROUTER_API_KEY`.
 
 See `skills/dtu-hpc/` for the full procedure and guardrails.
 
