@@ -292,6 +292,75 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(events.read_text().splitlines()), 1)
 
+    def test_watch_emits_kill_failure_once(self) -> None:
+        self.add_ledger()
+        bjobs = Path(self.tmp.name) / "bjobs.txt"
+        bjobs.write_text(
+            "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+            "123 tester KILL p1 host exec job now\n")
+        env = {"HPC_TEST_BJOBS": str(bjobs)}
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.repo / ".git" / "hpc" / "events.jsonl"
+        event = json.loads(events.read_text().splitlines()[0])
+        self.assertEqual(event["event"], "failed")
+        self.assertEqual(event["status"], "KILL")
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(events.read_text().splitlines()), 1)
+
+    def test_watch_mixed_array_failure_detail(self) -> None:
+        self.add_ledger()
+        bjobs = Path(self.tmp.name) / "bjobs.txt"
+        bjobs.write_text(
+            "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+            "123[1] tester RUN p1 host exec job now\n"
+            "123[2] tester KILL p1 host exec job now\n")
+        env = {"HPC_TEST_BJOBS": str(bjobs)}
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.repo / ".git" / "hpc" / "events.jsonl"
+        event = json.loads(events.read_text().splitlines()[0])
+        self.assertEqual(event["event"], "failed")
+        self.assertEqual(event["status"], "KILL")
+        self.assertIn("1/2 array elements failed", event["detail"])
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(events.read_text().splitlines()), 1)
+
+        bjobs.write_text(
+            "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+            "123[1] tester DONE p1 host exec job now\n"
+            "123[2] tester KILL p1 host exec job now\n")
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(events.read_text().splitlines()), 1)
+
+    def test_watch_emits_unknown_once(self) -> None:
+        self.add_ledger()
+        bjobs = Path(self.tmp.name) / "bjobs.txt"
+        bjobs.write_text(
+            "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+            "123 tester UNKWN p1 host exec job now\n")
+        env = {"HPC_TEST_BJOBS": str(bjobs)}
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.repo / ".git" / "hpc" / "events.jsonl"
+        event = json.loads(events.read_text().splitlines()[0])
+        self.assertEqual(event["event"], "unknown")
+        self.assertEqual(event["status"], "UNKWN")
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(events.read_text().splitlines()), 1)
+
+        bjobs.write_text(
+            "JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME\n"
+            "123 tester DONE p1 host exec job now\n")
+        result = self.hpc("watch", "--once", extra_env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(events.read_text().splitlines()[1])["event"],
+                         "completed")
+
     def test_watch_stall_emits_once(self) -> None:
         self.add_ledger()
         bjobs = Path(self.tmp.name) / "bjobs.txt"
@@ -350,6 +419,13 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(module.summarize_states(states[123]), "EXIT")
         self.assertFalse(module.states_are_terminal(states[123]))
         self.assertTrue(module.states_are_terminal(["DONE", "EXIT"]))
+        for state in ("KILL", "TERM", "ZOMBI"):
+            self.assertEqual(module.summarize_states([state]), state)
+            self.assertTrue(module.states_are_terminal([state]))
+        self.assertEqual(module.summarize_states(["UNKWN"]), "UNKWN")
+        self.assertFalse(module.states_are_terminal(["UNKWN"]))
+        self.assertEqual(module.summarize_states(["RUN", "KILL"]), "KILL")
+        self.assertFalse(module.states_are_terminal(["RUN", "KILL"]))
 
     def test_allow_dirty_warns_but_submits_head(self) -> None:
         (self.repo / "train.py").write_text("print('changed')\n")

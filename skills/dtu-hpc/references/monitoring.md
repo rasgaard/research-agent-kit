@@ -52,6 +52,10 @@ Events are appended to `.git/hpc/events.jsonl`; watcher state is in
 Event kinds: `state`, `completed`, `failed`, `stalled`, `resumed`, `unknown`,
 `monitor_error`, `monitor_recovered`.
 
+Failure states are `EXIT`, `KILL`, `TERM`, and `ZOMBI`; a mixed array reports
+the failure and counts failed elements. `UNKWN` emits one `unknown` event but is
+retried, so a later terminal status is still reported.
+
 ## Agent loop
 
 At the start of a session and before deciding a job is still healthy:
