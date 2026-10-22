@@ -83,5 +83,5 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Context: raw `bjobs -w` exposed redundant `USER`/`FROM_HOST`/`EXEC_HOST` columns while omitting the run start time, making the common status check noisy and less useful.
 - Decision: `hpc status` now renders `JOBID STAT QUEUE JOB_NAME SUBMIT_TIME START_TIME ELAPSED` from `bjobs -json`, merging array indexes into the job ID; `--hosts` adds `EXEC_HOST`/`FROM_HOST`; `--detail` retains `bstat` for one job's pending reasons and array history.
 - Alternatives: keep `bjobs -w` (no start time; noisy; rejected); parse fixed-width `bjobs` columns (fragile; rejected); use `bstat` for everything (no compact all-job view; rejected); include hosts by default (wide and rarely needed; rejected).
-- Refs: #60.
+- Refs: #60; PR #61.
 - Tags: hpc, cli, status, ux.
