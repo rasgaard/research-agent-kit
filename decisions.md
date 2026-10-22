@@ -101,3 +101,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: keep local merge with a read-back/revision check (still races between read and write; rejected); `mkdir` lock directory (stale after crashes; rejected); direct `chmod` after overwrite (readable window remains; rejected).
 - Refs: #45; PR #63.
 - Tags: hpc, secrets, atomicity, security, reliability.
+
+## 2026-10-22 — Layer project secrets over user-wide defaults
+
+- Context: all secrets lived in one per-user file, so project-specific credentials were readable by every job of that user and could not be scoped without editing the global file.
+- Decision: keep `~/.config/dtu-hpc/secrets.env` for user-wide values and add `~/.config/dtu-hpc/projects/<repo-key>.env`, where the key is a sanitized repo name plus a short hash of the credential-stripped `origin` URL. `secret set --project` writes the project file; jobs source global then project so project values win. `secret list` stays global-only for compatibility, with `--project` and `--all`; `doctor` checks both files.
+- Alternatives: replace the global file entirely (breaks user-wide credentials; rejected); per-project config files on the Mac (does not travel to jobs; rejected); no hash suffix (same-named repos collide; rejected); claim access isolation (same Unix user can read every project file; rejected).
+- Refs: #64; PR #65.
+- Tags: hpc, secrets, scopes, security, config.

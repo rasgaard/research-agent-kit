@@ -71,7 +71,7 @@ hpc logs <job-id> -f
 hpc pull <job-id>
 ```
 
-Set a job secret without putting it in argv or the repo (prompts, or pipe via stdin; written atomically, mode 600, on the cluster): `hpc secret set OPENROUTER_API_KEY`.
+Set a user-wide secret without putting it in argv or the repo (prompts, or pipe via stdin; written atomically, mode 600, on the cluster): `hpc secret set OPENROUTER_API_KEY`. Use `hpc secret set --project WANDB_API_KEY` for a key scoped to this repo's origin; project values override user-wide ones.
 
 See `skills/dtu-hpc/` for the full procedure and guardrails.
 

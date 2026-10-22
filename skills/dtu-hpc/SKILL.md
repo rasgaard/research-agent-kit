@@ -22,7 +22,7 @@ hpc stage                # optional interactive smoke
 ## Preconditions
 
 - `hpc init` has written `~/.config/dtu-hpc/config.ini`; pass `--ssh-host <alias>` if `~/.ssh/config` is not detected.
-- `hpc doctor` is all `ok` (local git/ssh/rsync, live master socket, remote `bsub`/`bstat`/`rsync`/`uv`, synced venv; a missing secrets file is a note, a wrong mode fails).
+- `hpc doctor` is all `ok` (local git/ssh/rsync, live master socket, remote `bsub`/`bstat`/`rsync`/`uv`, synced venv; missing global/project secrets files are notes, a wrong mode fails).
 - If the socket is dead or stale, `hpc login` opens a visible Terminal; the human types the DTU password. Never store it, never use `sshpass`. `hpc doctor` never prompts.
 - Batch work runs under LSF and is unaffected by SSH drops. Interactive work belongs in `tmux`.
 
@@ -45,8 +45,9 @@ hpc stage                # optional interactive smoke
 hpc init [--ssh-host A]    # write config; detect a DTU alias in ~/.ssh/config
 hpc login                  # ensure master socket (opens Terminal if re-auth needed)
 hpc sync-env               # ship HEAD and uv sync into the configured shared venv
-hpc secret set NAME        # set a job secret via stdin/prompt; mode 600 on the cluster
-hpc secret list            # key names only
+hpc secret set NAME        # set a user-wide secret via stdin/prompt; mode 600
+hpc secret set --project NAME  # set a repo-scoped secret
+hpc secret list [--project|--all]  # names only; default is global
 hpc doctor                 # local + remote prerequisites; never prompts
 hpc stage                  # ship HEAD to /work3/.../interactive/current
 hpc shell                  # linuxsh shared CPU node, in tmux
@@ -63,7 +64,7 @@ hpc events [--unread] [--json] # agent-facing event feed
 ## Job scripts and queues
 
 - **Stay on one queue.** Default GPU batch queue is `p1`. Do not rotate queues because a snapshot shows fewer “jobs ahead”: `bstat`/`classstat`/`showstart` estimates are noisy, and killing a pending job loses its position. Switch only for (a) explicit user instruction or (b) a hard resource mismatch (GPU model/memory, walltime, access/quota) that `p1` cannot satisfy. State the reason once in the issue/PR and make one deliberate switch — never a shuffle loop.
-- Start from `templates/job.lsf` / `templates/smoke.lsf`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}` are rendered by the CLI.
+- Start from `templates/job.lsf` / `templates/smoke.lsf`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}`, `{{PROJECT_SECRETS}}` are rendered by the CLI.
 - GPU queues: `gpua100`, `gpul40s`, `gpuv100`, `gpua10`, `gpua40`, plus `p1` (Hopper, project shares, max 1 node/job); request with `#BSUB -gpu "num=1:mode=exclusive_process"`.
 - CPU queue `hpc` (72 h max). Default walltime is only 15 min — always set `-W`.
 - Interactive dev nodes: `a100sh`, `voltash`, `sxm2sh`. Shared; use them for a one-step check, then submit batch.
@@ -76,7 +77,7 @@ hpc events [--unread] [--json] # agent-facing event feed
 - Never run applications on the login node; only submit and inspect.
 - Heavy downloads (HF weights, pip packages) belong on compute nodes. If a login-node HF download hangs, stop and submit a short cache job; set `HF_HUB_OFFLINE=1` only after that job has populated `HF_HOME`. Bound any login-node cache test with `timeout 60`.
 - Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `bkill` duplicates. Never kill a pending/running job solely to chase a shorter queue.
-- Never put tokens, keys, or the DTU password in the repo or job scripts. Local `export` does not cross `hpc submit`; use `hpc secret set NAME`, then source `{{SECRETS}}` in the job (see `references/sync.md`).
+- Never put tokens, keys, or the DTU password in the repo or job scripts. Local `export` does not cross `hpc submit`; use `hpc secret set NAME` (or `--project`), then source `{{SECRETS}}` and `{{PROJECT_SECRETS}}` in the job (see `references/sync.md`). Project scoping is organizational, not an access boundary.
 - Code is immutable per run: if you need a change, commit and submit a new job; do not edit `{{CODE_DIR}}`.
 - Data lives in `/work3/$USER` (not backed up) or a private HF repo pinned by revision; home is 30 GB and backed up.
 - Large artefacts go to a private HF repo **or bucket** (`hf sync` / `hf buckets cp`); `hf upload --repo-type dataset` does not work on a bucket.

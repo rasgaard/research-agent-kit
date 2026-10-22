@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import getpass
+import hashlib
 import json
 import os
 import re
@@ -27,6 +28,7 @@ DEFAULT_VENV = "/work3/{user}/hpc/venvs/{repo}"
 DEFAULT_HF_HOME = "/work3/{user}/hf"
 DEFAULT_UV_CACHE = "/work3/{user}/.cache/uv"
 DEFAULT_SECRETS = "$HOME/.config/dtu-hpc/secrets.env"
+DEFAULT_PROJECT_SECRETS = "$HOME/.config/dtu-hpc/projects/{project}.env"
 PROBE_TIMEOUT = 10
 GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
 P1_GPU_COMMAND = 'export TERM=${TERM:-xterm-256color}; p1gpush'
@@ -64,6 +66,14 @@ def repo_root() -> Path:
     return Path(git("rev-parse", "--show-toplevel").stdout.strip())
 
 
+def optional_repo_root() -> Optional[Path]:
+    result = run(["git", "rev-parse", "--show-toplevel"], cwd=Path.cwd(),
+                 text=True, capture_output=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return Path(result.stdout.strip())
+
+
 def git_dir(root: Path) -> Path:
     return Path(git("rev-parse", "--absolute-git-dir", cwd=root).stdout.strip())
 
@@ -76,6 +86,7 @@ def load_config() -> dict[str, str]:
         "hf_home": DEFAULT_HF_HOME,
         "uv_cache": DEFAULT_UV_CACHE,
         "secrets": DEFAULT_SECRETS,
+        "project_secrets": DEFAULT_PROJECT_SECRETS,
     }
     path = config_path()
     if path.exists():
@@ -596,10 +607,48 @@ def render(text: str, values: dict[str, str]) -> str:
     return text
 
 
+def project_key(root: Optional[Path]) -> str:
+    """Return a stable, filesystem-safe project identifier."""
+    if root is None:
+        return ""
+    identity = str(root.resolve())
+    slug_source = root.name
+    if root.is_dir():
+        try:
+            result = run(["git", "remote", "get-url", "origin"], cwd=root,
+                         text=True, capture_output=True)
+        except OSError:
+            result = None
+        if result is not None and result.returncode == 0:
+            identity = result.stdout.strip() or identity
+            candidate = re.split(r"[/:]", identity.rstrip("/"))[-1]
+            slug_source = candidate[:-4] if candidate.endswith(".git") else candidate
+            slug_source = slug_source or root.name
+    identity = re.sub(r"//[^/@]+@", "//", identity)
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", slug_source).strip("-._") or "repo"
+    return f"{slug}-{hashlib.sha256(identity.encode()).hexdigest()[:8]}"
+
+
+def secret_paths(config: dict[str, str], root: Optional[Path],
+                 user: str = "<user>", home: str = "<home>") -> tuple[str, str]:
+    """Return the global and project secrets paths for this checkout."""
+    fields = {
+        "user": user,
+        "home": home,
+        "repo": root.name if root else "",
+        "project": project_key(root),
+    }
+    return (
+        config.get("secrets", DEFAULT_SECRETS).format(**fields),
+        config.get("project_secrets", DEFAULT_PROJECT_SECRETS).format(**fields),
+    )
+
+
 def render_values(config: dict[str, str], root: Path, workdir: str, run_dir: str,
                   sha: str, job_name: str, user: str = "<user>",
                   home: str = "<home>") -> dict[str, str]:
-    fields = {"user": user, "home": home, "repo": root.name}
+    fields = {"user": user, "home": home, "repo": root.name,
+              "project": project_key(root)}
 
     def remote(key: str, default: str) -> str:
         return config.get(key, default).format(**fields)
@@ -613,6 +662,7 @@ def render_values(config: dict[str, str], root: Path, workdir: str, run_dir: str
         "HF_HOME": remote("hf_home", DEFAULT_HF_HOME),
         "UV_CACHE": remote("uv_cache", DEFAULT_UV_CACHE),
         "SECRETS": remote("secrets", DEFAULT_SECRETS),
+        "PROJECT_SECRETS": remote("project_secrets", DEFAULT_PROJECT_SECRETS),
     }
 
 
@@ -721,7 +771,8 @@ def cmd_init(_host: str, args: argparse.Namespace) -> int:
         f"venv = {DEFAULT_VENV}\n"
         f"hf_home = {DEFAULT_HF_HOME}\n"
         f"uv_cache = {DEFAULT_UV_CACHE}\n"
-        f"secrets = {DEFAULT_SECRETS}\n",
+        f"secrets = {DEFAULT_SECRETS}\n"
+        f"project_secrets = {DEFAULT_PROJECT_SECRETS}\n",
         encoding="utf-8",
     )
     print(f"hpc: wrote {path}")
@@ -850,6 +901,21 @@ def remote_read(host: str, path: str) -> Optional[str]:
     return result.stdout
 
 
+def secret_names(text: Optional[str]) -> list[str]:
+    names = []
+    for line in (text or "").splitlines():
+        if line.lstrip().startswith("#") or "=" not in line:
+            continue
+        name = line.split("=", 1)[0].strip()
+        if SECRET_NAME.match(name):
+            names.append(name)
+    return names
+
+
+def print_secret_names(names: list[str]) -> None:
+    print("\n".join(names) if names else "(no secrets)")
+
+
 def cmd_secret_set(host: str, args: argparse.Namespace) -> int:
     if not SECRET_NAME.match(args.name):
         die(f"invalid secret name: {args.name}")
@@ -863,29 +929,39 @@ def cmd_secret_set(host: str, args: argparse.Namespace) -> int:
         die("empty value; pipe it on stdin or pass --file")
     if "\n" in value:
         die("secret value must be a single line")
-    path = load_config().get("secrets", DEFAULT_SECRETS)
+    config = load_config()
+    root = repo_root() if args.project else optional_repo_root()
+    scope = "project" if args.project else "global"
     if args.dry_run:
-        print(f"hpc: would set {args.name} in {path} on {host} (no value shown)")
+        path = secret_paths(config, root)[1 if args.project else 0]
+        print(f"hpc: would set {args.name} in {path} on {host} "
+              f"({scope} scope, no value shown)")
         return 0
     ensure(host)
+    user, home = remote_env(host)
+    path = secret_paths(config, root, user, home)[1 if args.project else 0]
     payload = f"{args.name}\n{shlex.quote(value)}\n"
     ssh_login(host, SECRET_WRITE, [path], input=payload, check=True)
-    print(f"hpc: set {args.name} in {path} on {host} (mode 600)")
+    print(f"hpc: set {args.name} in {path} on {host} ({scope} scope, mode 600)")
     return 0
 
 
-def cmd_secret_list(host: str, _args: argparse.Namespace) -> int:
+def cmd_secret_list(host: str, args: argparse.Namespace) -> int:
     ensure(host)
-    path = load_config().get("secrets", DEFAULT_SECRETS)
-    text = remote_read(host, path)
-    names = []
-    for line in (text or "").splitlines():
-        if line.lstrip().startswith("#") or "=" not in line:
-            continue
-        name = line.split("=", 1)[0].strip()
-        if SECRET_NAME.match(name):
-            names.append(name)
-    print("\n".join(names) if names else "(no secrets)")
+    config = load_config()
+    root = repo_root() if (args.project or args.all) else optional_repo_root()
+    user, home = remote_env(host)
+    global_path, project_path = secret_paths(config, root, user, home)
+    if args.project:
+        print_secret_names(secret_names(remote_read(host, project_path)))
+        return 0
+    if args.all:
+        print("global:")
+        print_secret_names(secret_names(remote_read(host, global_path)))
+        print(f"project ({project_key(root)}):")
+        print_secret_names(secret_names(remote_read(host, project_path)))
+        return 0
+    print_secret_names(secret_names(remote_read(host, global_path)))
     return 0
 
 
@@ -1195,16 +1271,18 @@ def cmd_doctor(host: str, _args: argparse.Namespace) -> int:
     probe = ssh_login(host, 'test -x "$1/bin/python"', [venv])
     checks.append((f"venv {venv}", probe.returncode == 0,
                    "synced" if probe.returncode == 0 else "missing — run: hpc sync-env"))
-    secrets = config.get("secrets", DEFAULT_SECRETS)
-    probe = ssh_login(host, EXPAND_PATH + '; test -f "$f" && stat -c %a "$f"',
-                      [secrets])
-    if probe.returncode == 0:
-        mode = probe.stdout.strip()
-        checks.append(("remote secrets", mode in {"600", "400"},
-                       f"{secrets} (mode {mode})"))
-    else:
-        checks.append(("remote secrets", True,
-                       f"missing (optional) — hpc secret set NAME ({secrets})"))
+    global_secrets, project_secrets = secret_paths(config, root, user, home)
+    secret_files = (("remote secrets (global)", global_secrets, "hpc secret set NAME"),
+                    ("remote secrets (project)", project_secrets,
+                     "hpc secret set --project NAME"))
+    for label, path, hint in secret_files:
+        probe = ssh_login(host, EXPAND_PATH + '; test -f "$f" && stat -c %a "$f"',
+                          [path])
+        if probe.returncode == 0:
+            mode = probe.stdout.strip()
+            checks.append((label, mode in {"600", "400"}, f"{path} (mode {mode})"))
+        else:
+            checks.append((label, True, f"missing (optional) — {hint} ({path})"))
     print_checks(checks)
     return 0 if all(ok for _, ok, _ in checks) else 1
 
@@ -1243,9 +1321,14 @@ def build_parser() -> argparse.ArgumentParser:
     secret_set = secret_sub.add_parser("set", help="set a key (stdin, prompt, or --file)")
     secret_set.add_argument("name")
     secret_set.add_argument("--file", default=None)
+    secret_set.add_argument("--project", action="store_true",
+                            help="write the project secret file instead of the global one")
     secret_set.add_argument("--dry-run", action="store_true")
     secret_set.set_defaults(func=cmd_secret_set)
     secret_list = secret_sub.add_parser("list", help="list key names (never values)")
+    secret_scope = secret_list.add_mutually_exclusive_group()
+    secret_scope.add_argument("--project", action="store_true")
+    secret_scope.add_argument("--all", action="store_true")
     secret_list.set_defaults(func=cmd_secret_list)
 
     shell = sub.add_parser("shell", help="shared CPU node (linuxsh) in tmux")

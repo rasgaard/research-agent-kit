@@ -92,9 +92,10 @@ model work on CPU, do **not** take a GPU. Use the `hpc` CPU queue instead:
 
 - The 72 h ceiling is the real constraint. Chunk work per cell, write one output
   per cell, and make the runner skip completed cells on re-submit.
-- Local exports do not cross `hpc submit` (fresh SSH login shell). Store keys with
-  `hpc secret set NAME`, then source `{{SECRETS}}` in the job; never write them into
-  the repo or the job script.
+- Local exports do not cross `hpc submit` (fresh SSH login shell). Store user-wide
+  keys with `hpc secret set NAME` and project keys with `hpc secret set --project
+  NAME`, then source `{{SECRETS}}` and `{{PROJECT_SECRETS}}` in the job; never write
+  them into the repo or the job script.
 - Compute nodes have network egress. Prove it with a one-call smoke before a
   long run.
 - Use `python -u` so `bpeek`/`hpc logs -f` show progress.

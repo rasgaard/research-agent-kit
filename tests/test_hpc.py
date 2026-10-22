@@ -43,6 +43,7 @@ class HpcCliTest(unittest.TestCase):
                 exit 0 ;;
               *"bsub"*) printf 'Job <123> is submitted to queue <gpua100>.\\n' ;;
               *"-json"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
+              *"cat --"*"/projects/"*) [ -n "${HPC_TEST_PROJECT_SECRETS:-}" ] && cat "$HPC_TEST_PROJECT_SECRETS" ;;
               *"cat --"*) [ -n "${HPC_TEST_SECRETS:-}" ] && cat "$HPC_TEST_SECRETS" ;;
               *"bstat"*) printf 'JOBID USER QUEUE JOB_NAME NALLOC STAT\\n' ;;
               *"bjobs"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
@@ -549,6 +550,10 @@ class HpcCliTest(unittest.TestCase):
         config = self.config.read_text()
         self.assertIn("host = dtu", config)
         self.assertIn("venv = /work3/{user}/hpc/venvs/{repo}", config)
+        self.assertIn(
+            "project_secrets = $HOME/.config/dtu-hpc/projects/{project}.env",
+            config,
+        )
         self.assertIn("hpc login", result.stdout)
 
     def test_init_without_alias_refuses_default(self) -> None:
@@ -637,12 +642,57 @@ class HpcCliTest(unittest.TestCase):
         self.assertNotIn("sk-test-value", result.stdout + result.stderr)
         self.assertFalse(self.log.exists())
 
+    def test_secret_set_project_writes_project_file(self) -> None:
+        value = Path(self.tmp.name) / "value.txt"
+        value.write_text("sk-project-value\n")
+        result = self.hpc("secret", "set", "--project", "K", "--file", str(value))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn("/projects/", log)
+        self.assertNotIn(str(self.home / ".config/dtu-hpc/secrets.env"), log)
+        self.assertNotIn("sk-project-value", log)
+        self.assertIn("sk-project-value", self.stdin_log.read_text())
+
+    def test_secret_project_dry_run_shows_project_path(self) -> None:
+        value = Path(self.tmp.name) / "value.txt"
+        value.write_text("sk-project-value\n")
+        result = self.hpc("secret", "set", "K", "--project", "--file", str(value),
+                          "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("project scope", result.stdout)
+        self.assertIn("/projects/", result.stdout)
+        self.assertNotIn("sk-project-value", result.stdout + result.stderr)
+        self.assertFalse(self.log.exists())
+
     def test_secret_list_parses_only_valid_names(self) -> None:
         secrets = Path(self.tmp.name) / "remote-secrets"
         secrets.write_text("# comment\nA=1\nnoise without equals\nB=2\n")
         result = self.hpc("secret", "list", extra_env={"HPC_TEST_SECRETS": str(secrets)})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip().splitlines(), ["A", "B"])
+
+    def test_secret_list_all_labels_scopes(self) -> None:
+        global_secrets = Path(self.tmp.name) / "global-secrets"
+        project_secrets = Path(self.tmp.name) / "project-secrets"
+        global_secrets.write_text("G=1\n")
+        project_secrets.write_text("P=2\n")
+        result = self.hpc("secret", "list", "--all", extra_env={
+            "HPC_TEST_SECRETS": str(global_secrets),
+            "HPC_TEST_PROJECT_SECRETS": str(project_secrets),
+        })
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("global:\nG", result.stdout)
+        self.assertIn("project (", result.stdout)
+        self.assertIn("P", result.stdout)
+
+    def test_secret_list_project_only(self) -> None:
+        project_secrets = Path(self.tmp.name) / "project-secrets"
+        project_secrets.write_text("P=2\n")
+        result = self.hpc("secret", "list", "--project", extra_env={
+            "HPC_TEST_PROJECT_SECRETS": str(project_secrets),
+        })
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "P")
 
     def test_sync_env_uses_shared_venv(self) -> None:
         result = self.hpc("sync-env")
@@ -653,7 +703,7 @@ class HpcCliTest(unittest.TestCase):
 
     def test_dry_run_renders_env_placeholders(self) -> None:
         (self.repo / "job.lsf").write_text(
-            "#BSUB -q p1\ncd {{CODE_DIR}}\necho {{VENV}} {{HF_HOME}} {{SECRETS}}\n")
+            "#BSUB -q p1\ncd {{CODE_DIR}}\necho {{VENV}} {{HF_HOME}} {{SECRETS}} {{PROJECT_SECRETS}}\n")
         self.git("add", "job.lsf")
         self.git("commit", "-qm", "placeholders")
         result = self.hpc("submit", "job.lsf", "--dry-run")
@@ -661,6 +711,7 @@ class HpcCliTest(unittest.TestCase):
         self.assertIn("/work3/<user>/hpc/venvs/proj", result.stdout)
         self.assertIn("/work3/<user>/hf", result.stdout)
         self.assertIn("$HOME/.config/dtu-hpc/secrets.env", result.stdout)
+        self.assertIn("/projects/", result.stdout)
 
 
 class RenderValuesTest(unittest.TestCase):
@@ -673,6 +724,67 @@ class RenderValuesTest(unittest.TestCase):
         self.assertEqual(values["VENV"], "/work3/tester/hpc/venvs/proj")
         self.assertEqual(values["HF_HOME"], "/work3/tester/hf")
         self.assertEqual(values["SECRETS"], "$HOME/.config/dtu-hpc/secrets.env")
+        self.assertTrue(values["PROJECT_SECRETS"].startswith(
+            "$HOME/.config/dtu-hpc/projects/"))
+        self.assertTrue(values["PROJECT_SECRETS"].endswith(".env"))
+
+
+class TemplateSourceOrderTest(unittest.TestCase):
+    def test_job_template_sources_global_before_project(self) -> None:
+        lines = [
+            line.strip()
+            for line in (REPO / "templates" / "job.lsf").read_text().splitlines()
+            if line.strip().startswith("[ -f")
+        ]
+        self.assertEqual(lines, [
+            '[ -f "{{SECRETS}}" ] && . "{{SECRETS}}"',
+            '[ -f "{{PROJECT_SECRETS}}" ] && . "{{PROJECT_SECRETS}}"',
+        ])
+
+
+class ProjectKeyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        import runpy
+        import types
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.module = types.SimpleNamespace(
+            **runpy.run_path(str(HPC), run_name="hpc_cli")
+        )
+
+    def make_repo(self, name: str, origin: str | None = None) -> Path:
+        root = Path(self.tmp.name) / name
+        root.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        if origin:
+            subprocess.run(["git", "remote", "add", "origin", origin],
+                           cwd=root, check=True)
+        return root
+
+    def test_same_origin_is_stable_across_checkouts(self) -> None:
+        first = self.make_repo("one", "https://github.com/org/repo.git")
+        second = self.make_repo("two", "https://github.com/org/repo.git")
+        self.assertEqual(self.module.project_key(first),
+                         self.module.project_key(second))
+        self.assertEqual(self.module.project_key(first),
+                         self.module.project_key(first))
+
+    def test_origin_credentials_do_not_change_key(self) -> None:
+        plain = self.make_repo("one", "https://github.com/org/repo.git")
+        with_credentials = self.make_repo(
+            "two", "https://user:token@github.com/org/repo.git")
+        self.assertEqual(self.module.project_key(plain),
+                         self.module.project_key(with_credentials))
+
+    def test_different_origins_and_fallbacks_collide_only_by_design(self) -> None:
+        first = self.make_repo("first", "https://github.com/org/a.git")
+        second = self.make_repo("second", "https://github.com/org/b.git")
+        fallback_a = self.make_repo("fallback-a")
+        fallback_b = self.make_repo("fallback-b")
+        self.assertNotEqual(self.module.project_key(first),
+                            self.module.project_key(second))
+        self.assertNotEqual(self.module.project_key(fallback_a),
+                            self.module.project_key(fallback_b))
 
 
 class SecretWriteScriptTest(unittest.TestCase):
