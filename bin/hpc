@@ -29,7 +29,11 @@ DEFAULT_UV_CACHE = "/work3/{user}/.cache/uv"
 DEFAULT_SECRETS = "$HOME/.config/dtu-hpc/secrets.env"
 GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
 P1_GPU_COMMAND = 'export TERM=${TERM:-xterm-256color}; p1gpush'
-TERMINAL_STATES = {"DONE", "EXIT"}
+SUCCESS_STATES = {"DONE"}
+FAILURE_PRIORITY = ("EXIT", "KILL", "TERM", "ZOMBI")
+FAILURE_STATES = set(FAILURE_PRIORITY)
+UNKNOWN_STATES = {"UNKWN"}
+TERMINAL_STATES = SUCCESS_STATES | FAILURE_STATES
 SUSPENDED_STATES = {"SSUSP", "USUSP", "PSUSP"}
 WATCH_TERMINAL_EVENTS = {"completed", "failed", "stalled", "unknown",
                          "monitor_error"}
@@ -304,17 +308,29 @@ def parse_bjobs(text: str) -> dict[int, list[str]]:
 def summarize_states(states: list[str]) -> str:
     if not states:
         return "UNKNOWN"
-    if "EXIT" in states:
-        return "EXIT"
-    if all(state == "DONE" for state in states):
-        return "DONE"
+    for state in FAILURE_PRIORITY:
+        if state in states:
+            return state
     if any(state == "RUN" for state in states):
         return "RUN"
     if any(state == "PEND" for state in states):
         return "PEND"
     if any(state in SUSPENDED_STATES for state in states):
         return "SUSP"
+    if all(state == "DONE" for state in states):
+        return "DONE"
+    if any(state in UNKNOWN_STATES for state in states):
+        return "UNKWN"
     return states[0]
+
+
+def failure_detail(states: list[str], status: str) -> str:
+    if len(states) <= 1:
+        return f"status {status}"
+    counts = ", ".join(f"{state}={states.count(state)}"
+                       for state in FAILURE_PRIORITY if state in states)
+    failed = sum(states.count(state) for state in FAILURE_STATES)
+    return f"{failed}/{len(states)} array elements failed ({counts})"
 
 
 def states_are_terminal(states: list[str]) -> bool:
@@ -418,17 +434,15 @@ def collect_watch_events(host: str, entries: list[dict], state: dict,
         if status != before:
             if status == "DONE" and terminal:
                 kind = "completed"
-            elif status == "EXIT":
+            elif status in FAILURE_STATES:
                 kind = "failed"
-            elif status == "UNKNOWN":
+            elif status in UNKNOWN_STATES or status == "UNKNOWN":
                 kind = "unknown"
             else:
                 kind = "state"
             if previous or kind in {"completed", "failed", "unknown"}:
-                if kind == "failed" and not terminal:
-                    detail = f"{raw_states.count('EXIT')}/{len(raw_states)} array elements EXIT"
-                else:
-                    detail = f"status {status}"
+                detail = (failure_detail(raw_states, status)
+                          if kind == "failed" else f"status {status}")
                 events.append(make_event(entry, kind, status, detail, now))
             previous["status"] = status
             previous["stalled"] = False
