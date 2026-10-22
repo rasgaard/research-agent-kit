@@ -63,7 +63,7 @@ cp templates/ssh_config ~/.ssh/config.d/dtu     # edit User/HostName
 ssh-add --apple-use-keychain ~/.ssh/gbar
 hpc init                        # detect the DTU alias; write ~/.config/dtu-hpc/config.ini
 hpc login                       # one Terminal auth for this session
-hpc sync-env                    # once in a project with uv.lock; build the shared venv
+hpc sync-env                    # sync the shared venv when env inputs change; no-op otherwise
 hpc doctor
 hpc stage                       # HEAD → /work3/.../interactive/current
 hpc shell                       # CPU shared node (linuxsh), or: hpc gpu a100|p1

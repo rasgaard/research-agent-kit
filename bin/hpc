@@ -3,7 +3,7 @@
 
 Stdlib only. Keeps code on the Mac as the source of truth: every job ships a
 `git archive` snapshot pinned to a SHA, so the HPC side needs no GitHub
-credentials and runs are reproducible.
+credentials. The ledger records the code SHA and the env manifest.
 """
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ DEFAULT_UV_CACHE = "/work3/{user}/.cache/uv"
 DEFAULT_SECRETS = "$HOME/.config/dtu-hpc/secrets.env"
 DEFAULT_PROJECT_SECRETS = "$HOME/.config/dtu-hpc/projects/{project}.env"
 PROBE_TIMEOUT = 10
+SYNC_TIMEOUT = 600
 GPU_NODES = {"a100": "a100sh", "v100": "voltash", "sxm2": "sxm2sh"}
 P1_GPU_COMMAND = 'export TERM=${TERM:-xterm-256color}; p1gpush'
 SUCCESS_STATES = {"DONE"}
@@ -65,6 +66,30 @@ def git(*args: str, cwd: Optional[Path] = None, check: bool = True) -> subproces
 
 def repo_root() -> Path:
     return Path(git("rev-parse", "--show-toplevel").stdout.strip())
+
+
+ENV_INPUT_FILES = ("pyproject.toml", "uv.lock", ".python-version", "uv.toml")
+
+
+def head_file_sha256(root: Path, sha: str, name: str) -> Optional[str]:
+    """Hash a file from a commit (not the working tree)."""
+    result = subprocess.run(
+        ["git", "show", f"{sha}:{name}"],
+        cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        return None
+    return hashlib.sha256(result.stdout).hexdigest()
+
+
+def head_env_inputs(root: Path, sha: str) -> tuple[Optional[str], dict[str, Optional[str]]]:
+    """Return the environment-input hash and the individual file hashes."""
+    hashes = {name: head_file_sha256(root, sha, name) for name in ENV_INPUT_FILES}
+    if hashes["uv.lock"] is None:
+        return None, hashes
+    material = "".join(f"{name}\0{value}\n"
+                       for name, value in hashes.items() if value is not None)
+    return hashlib.sha256(material.encode()).hexdigest(), hashes
 
 
 def optional_repo_root() -> Optional[Path]:
@@ -819,7 +844,7 @@ def cmd_init(_host: str, args: argparse.Namespace) -> int:
     if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
         print(f"hpc: warning: {bin_dir} is not on PATH", file=sys.stderr)
     print("hpc: next → hpc login        (opens Terminal; DTU password required)")
-    print("hpc:        hpc sync-env     (once; builds the shared venv)")
+    print("hpc:        hpc sync-env     (when env inputs change; builds the shared venv)")
     print("hpc:        hpc doctor")
     return 0
 
@@ -833,26 +858,60 @@ def cmd_sync_env(host: str, args: argparse.Namespace) -> int:
         print("hpc: warning: syncing HEAD; uncommitted edits are not shipped",
               file=sys.stderr)
     sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
+    input_sha, inputs = head_env_inputs(root, sha)
+    if input_sha is None:
+        die("uv.lock is not tracked in HEAD; commit it before syncing")
+    lock_sha = inputs["uv.lock"]
     ensure(host)
     config = load_config()
     user, home = remote_env(host)
     base = config["remote_root"].format(user=user, home=home, repo=root.name)
+    values = render_values(config, root, "", "", sha, "sync-env", user, home)
+    venv, cache = values["VENV"], values["UV_CACHE"]
+    manifest = read_env_manifest(host, venv)
+    if not args.force:
+        probe = ssh_login(host, 'test -x "$1/bin/python"', [venv])
+        if (probe.returncode == 0 and manifest is not None and
+                manifest.get("input_sha256") == input_sha and
+                manifest.get("uv_version") and manifest.get("python_version")):
+            print(f"hpc: venv up to date: {venv} (lock {lock_sha[:8]})")
+            return 0
+        if probe.returncode == 0 and manifest is None:
+            print("hpc: existing venv has no env manifest; rebuilding",
+                  file=sys.stderr)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     destination = f"{base}/env/{stamp}-{sha[:8]}"
     ship_snapshot(host, root, sha, destination)
-    values = render_values(config, root, destination, destination, sha, "sync-env",
-                           user, home)
-    venv, cache = values["VENV"], values["UV_CACHE"]
-    print(f"hpc: syncing {venv} from {sha[:8]} (first run downloads torch)", file=sys.stderr)
-    script = ('module load python3/3.11.9 2>/dev/null || true; cd "$1" && '
+    print(f"hpc: syncing {venv} from {sha[:8]} (lock {lock_sha[:8]})",
+          file=sys.stderr)
+    script = ('cd "$1" && '
               'export PATH="$HOME/.local/bin:$PATH" UV_PYTHON_DOWNLOADS=never '
               'UV_PROJECT_ENVIRONMENT="$2" UV_CACHE_DIR="$3" && '
-              'uv sync --frozen --python "$(command -v python3)"')
+              f'timeout {SYNC_TIMEOUT} uv sync --locked')
     result = ssh_login(host, script, [destination, venv, cache], check=False)
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
+        if result.returncode == 124:
+            die(f"uv sync timed out after {SYNC_TIMEOUT}s; rerun or use hpc shell")
         die("uv sync failed")
-    print(f"hpc: venv ready: {venv}")
+    versions = ssh_login(
+        host,
+        'export PATH="$HOME/.local/bin:$PATH"; uv --version; "$1/bin/python" --version',
+        [venv], check=False)
+    uv_version, python_version = parse_tool_versions(
+        versions.stdout + versions.stderr)
+    if versions.returncode != 0 or uv_version is None or python_version is None:
+        die("uv sync finished but could not read the uv/python versions")
+    write_env_manifest(host, venv, {
+        "input_sha256": input_sha,
+        "lock_sha256": lock_sha,
+        "sha": sha,
+        "venv": venv,
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "uv_version": uv_version,
+        "python_version": python_version,
+    })
+    print(f"hpc: venv ready: {venv} (lock {lock_sha[:8]})")
     print("hpc: next → hpc doctor   |   hpc submit <job.lsf>")
     return 0
 
@@ -934,6 +993,49 @@ def remote_read(host: str, path: str) -> Optional[str]:
     if result.returncode != 0:
         die(result.stderr.strip() or f"could not read {path} on {host}")
     return result.stdout
+
+
+ENV_MANIFEST_WRITE = r'''set -eu
+umask 022
+tmp=$(mktemp "$1.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+mv -f "$tmp" "$1"
+trap - EXIT
+'''
+
+
+def env_manifest_path(venv: str) -> str:
+    return f"{venv.rstrip('/')}.hpc-env.json"
+
+
+def parse_tool_versions(text: str) -> tuple[Optional[str], Optional[str]]:
+    """Parse `uv --version` and `python --version` output."""
+    uv_version = python_version = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("uv ") and uv_version is None:
+            uv_version = line
+        elif line.startswith("Python ") and python_version is None:
+            python_version = line
+    return uv_version, python_version
+
+
+def read_env_manifest(host: str, venv: str) -> Optional[dict]:
+    text = remote_read(host, env_manifest_path(venv))
+    if text is None:
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_env_manifest(host: str, venv: str, data: dict) -> None:
+    payload = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    ssh_login(host, ENV_MANIFEST_WRITE, [env_manifest_path(venv)],
+              input=payload, check=True)
 
 
 def secret_names(text: Optional[str]) -> list[str]:
@@ -1059,6 +1161,10 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
     dirty = git("status", "--porcelain", cwd=root).stdout.strip()
     sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
     branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=root).stdout.strip()
+    input_sha, inputs = head_env_inputs(root, sha)
+    if input_sha is None:
+        die("uv.lock is not tracked in HEAD; commit it before submitting")
+    lock_sha = inputs["uv.lock"]
 
     source = script.read_text(encoding="utf-8")
 
@@ -1101,11 +1207,23 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
     run_dir = f"{base}/jobs/{run_id}"
     workdir = f"{run_dir}/code"
     logdir = f"{run_dir}/logs"
+    values = render_values(config, root, workdir, run_dir, sha, job_name, user, home)
+    venv = values["VENV"]
+    probe = ssh_login(host, 'test -x "$1/bin/python"', [venv])
+    if probe.returncode != 0:
+        die(f"venv {venv} is missing; run: hpc sync-env")
+    manifest = read_env_manifest(host, venv)
+    if manifest is None:
+        die(f"venv {venv} has no env manifest; run: hpc sync-env")
+    if manifest.get("input_sha256") != input_sha:
+        synced = str(manifest.get("input_sha256") or "unknown")[:8]
+        die(f"venv {venv} is stale for the current env inputs "
+            f"(lock {lock_sha[:8]}, synced {synced}); run: hpc sync-env")
+
     ssh(host, [f"mkdir -p {shlex.quote(workdir)} {shlex.quote(logdir)}"], check=True)
     ship_snapshot(host, root, sha, workdir)
 
-    rendered = apply_queue(render(source, render_values(
-        config, root, workdir, run_dir, sha, job_name, user, home)), args.queue)
+    rendered = apply_queue(render(source, values), args.queue)
     remote_script = f"{run_dir}/job.lsf"
     ssh(host, [f"cat > {shlex.quote(remote_script)}"], input=rendered, check=True)
     result = ssh_login(host, 'cd "$1" && bsub < "$2"', [run_dir, remote_script],
@@ -1123,6 +1241,12 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
         "queue": extract_queue(rendered),
         "run_dir": run_dir,
         "workdir": workdir,
+        "venv": venv,
+        "lock_sha256": lock_sha,
+        "env_input_sha256": input_sha,
+        "env_synced_at": manifest.get("synced_at"),
+        "uv_version": manifest.get("uv_version"),
+        "python_version": manifest.get("python_version"),
         "submitted_at": datetime.now(timezone.utc).isoformat(),
     }
     append_ledger(root, entry)
@@ -1302,10 +1426,33 @@ def cmd_doctor(host: str, _args: argparse.Namespace) -> int:
     for name in ("bsub", "bstat", "rsync", "uv"):
         probe = ssh_login(host, f"command -v {name} >/dev/null 2>&1")
         checks.append((f"remote {name}", probe.returncode == 0, "on PATH"))
+    head = git("rev-parse", "HEAD", cwd=root, check=False)
+    input_sha, inputs = (head_env_inputs(root, head.stdout.strip())
+                         if head.returncode == 0 else (None, {}))
+    lock_sha = inputs.get("uv.lock")
+    checks.append(("uv.lock", lock_sha is not None, "tracked in HEAD"))
     venv = render_values(config, root, "", "", "", "", user, home)["VENV"]
     probe = ssh_login(host, 'test -x "$1/bin/python"', [venv])
-    checks.append((f"venv {venv}", probe.returncode == 0,
-                   "synced" if probe.returncode == 0 else "missing — run: hpc sync-env"))
+    if probe.returncode != 0:
+        note = "missing — run: hpc sync-env"
+        ok = False
+    elif input_sha is None:
+        note = "uv.lock missing from HEAD"
+        ok = False
+    else:
+        manifest = read_env_manifest(host, venv)
+        if manifest is None:
+            note = "missing env manifest — run: hpc sync-env"
+            ok = False
+        elif manifest.get("input_sha256") != input_sha:
+            synced = str(manifest.get("input_sha256") or "unknown")[:8]
+            note = (f"stale (env {synced}, need {input_sha[:8]}) — "
+                    "run: hpc sync-env")
+            ok = False
+        else:
+            note = f"synced (lock {lock_sha[:8]})"
+            ok = True
+    checks.append((f"venv {venv}", ok, note))
     global_secrets, project_secrets = secret_paths(config, root, user, home)
     secret_files = (("remote secrets (global)", global_secrets, "hpc secret set NAME"),
                     ("remote secrets (project)", project_secrets,
@@ -1347,8 +1494,10 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--force", action="store_true")
     init.set_defaults(func=cmd_init)
 
-    sync_env = sub.add_parser("sync-env", help="ship HEAD and uv sync the shared venv")
+    sync_env = sub.add_parser("sync-env", help="sync the shared venv when env inputs change")
     sync_env.add_argument("--allow-dirty", action="store_true")
+    sync_env.add_argument("--force", action="store_true",
+                          help="rebuild even when the env manifest matches")
     sync_env.set_defaults(func=cmd_sync_env)
 
     secret = sub.add_parser("secret", help="manage the remote secrets env file")

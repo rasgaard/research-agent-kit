@@ -180,13 +180,31 @@ it; fix with `chmod 600` on the reported path.
 **Fix:** run `hpc login` and complete the DTU password prompt in the Terminal.
 Do not retry `hpc doctor`; it deliberately never prompts.
 
-## `hpc sync-env` fails on `uv sync --frozen`
+## `hpc sync-env` fails on `uv sync --locked`
 
 **Symptom:** the venv is missing or `uv` reports the lock is out of date.
 
-**Fix:** commit the updated `uv.lock`, then rerun `hpc sync-env` (it ships
-`HEAD`). Do not run an unfrozen `uv sync` in the job; that makes runs
-non-reproducible and races other jobs using the shared venv.
+**Fix:** commit the updated environment inputs (including `uv.lock`), then
+rerun `hpc sync-env` (it ships `HEAD` and writes the env manifest). If
+`submit` says the venv is stale, run `hpc sync-env` before resubmitting. Do
+not run an unlocked `uv sync` in the job; that makes runs non-reproducible and
+races other jobs using the shared venv.
+
+## `hpc sync-env` cannot find a compatible Python
+
+**Symptom:** `uv` reports that the login-node interpreter is incompatible with
+`requires-python`, e.g. `requires-python = ">=3.12"` but Python 3.11.9 was
+found.
+
+**Cause:** no uv-managed interpreter satisfies `.python-version` /
+`requires-python`, and sync sets `UV_PYTHON_DOWNLOADS=never` so it does not
+silently download one.
+
+**Fix:** install a matching interpreter once on the login node (for example
+`uv python install 3.12`), then rerun `hpc sync-env`. To pin it, add
+`.python-version`; do not work around this by symlinking
+`~/.local/bin/python3` or loading a login module, which makes the build depend
+on the login-node default.
 
 ## Logs are empty until the job ends
 
