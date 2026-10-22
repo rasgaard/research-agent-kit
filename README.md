@@ -13,11 +13,20 @@ skills/research-init/        # opencode skill: "start a new research project"
 skills/dtu-hpc/              # optional: DTU LSF workflow (local-first, SHA-pinned jobs)
   SKILL.md                   # commands, guardrails, re-auth protocol
   references/                # auth, sync, queues, monitoring — verified DTU docs
-bin/hpc                      # stdlib CLI: init/login/sync-env/shell/gpu/submit/status/logs/pull/secret/watch/events
+bin/hpc                      # stdlib CLI: init/login/ensure/doctor/sync-env/stage/shell/gpu/submit/status/logs/pull/secret/watch/events
 examples/hf-smoke/           # uv + torch + transformers + datasets p1 job (verified)
 templates/                   # LSF job + smoke templates, ssh_config, config.ini
 tests/test_hpc.py            # stubbed CLI tests (no network)
 decisions.md                 # append-only decision log for the kit itself
+decisions-archive.md         # older entries preserved verbatim; indexed from decisions.md
+```
+
+## Tests
+
+Stdlib only, no extra dependencies:
+
+```bash
+python3 -m unittest discover -s tests -q
 ```
 
 ## Use in a new project
@@ -41,7 +50,7 @@ Then quit and restart opencode (config-time files load at startup only). `~/.loc
 Local-first workflow for DTU's LSF cluster: edit/test on the Mac, ship an immutable `git archive` snapshot at a SHA, run under LSF, pull results. No GitHub credentials or git clone on the cluster.
 
 - **Auth:** outside DTU requires key + key passphrase + DTU password, so fully unattended access is impossible. `ControlMaster`/`ControlPersist` gives **one auth per session**; jobs survive disconnects. The DTU password is never stored. `hpc init` writes the config; `hpc doctor` never prompts.
-- **Queues:** local CPU smoke → interactive GPU (`a100sh`/`voltash`/`sxm2sh`/`p1i`, in `tmux`) → batch (`gpua100`, `gpul40s`, `gpuv100`, `p1`, …).
+- **Queues:** local CPU smoke → interactive GPU (`hpc gpu a100|v100|sxm2|p1`, in `tmux`) → batch (`gpua100`, `gpul40s`, `gpuv100`, `p1`, …). The `p1i` interactive queue is reached with `p1gpush` (via `hpc gpu p1`); `p1i` is not an accepted `hpc gpu` argument.
 - **Data:** private HF repos pinned by revision (or buckets via `hf sync` / `hf buckets cp`), cached in `/work3/$USER/hf`; large project data can live in `/dtu/p1/$USER` (P1 scratch) via `SCRATCH`; results via `hpc pull` + small metrics in git.
 - **Quotas:** cluster free space is not your allotment; run `getquota_work3.sh` and `getquota_p1.sh` on the login node.
 
