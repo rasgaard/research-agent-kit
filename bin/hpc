@@ -641,6 +641,8 @@ def apply_queue(text: str, queue: Optional[str]) -> str:
 
 
 BSUB_JOB = re.compile(r'^#BSUB\s+-J\s+("[^"]*"|\S+)', re.MULTILINE)
+QUEUE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+JOB_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-\[\],%]+$")
 
 
 def bsub_job_name(text: str) -> Optional[str]:
@@ -857,15 +859,20 @@ def cmd_stage(host: str, args: argparse.Namespace) -> int:
 
 
 def cmd_submit(host: str, args: argparse.Namespace) -> int:
-    root = repo_root()
     script = Path(args.script)
     if not script.exists():
         die(f"job script not found: {script}")
+    if args.queue is not None and not QUEUE_RE.fullmatch(args.queue):
+        die(f"invalid queue {args.queue!r}: use only letters, digits, '.', '_' or '-'")
+    job_name = args.name or script.stem
+    if not JOB_NAME_RE.fullmatch(job_name):
+        die(f"invalid job name {job_name!r}: whitespace, newlines, and shell or "
+            "control characters are not allowed")
+    root = repo_root()
     dirty = git("status", "--porcelain", cwd=root).stdout.strip()
     sha = git("rev-parse", "HEAD", cwd=root).stdout.strip()
     branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=root).stdout.strip()
 
-    job_name = args.name or script.stem
     source = script.read_text(encoding="utf-8")
 
     if not args.dry_run:
@@ -990,17 +997,21 @@ def cmd_logs(host: str, args: argparse.Namespace) -> int:
 
 
 def cmd_pull(host: str, args: argparse.Namespace) -> int:
-    ensure(host)
     root = repo_root()
     entry = find_job(root, args.job_id) if args.job_id else None
     if not entry:
         die(f"job {args.job_id or ''} not in the local ledger; pass a job id from hpc submit")
+    run_dir = str(entry["run_dir"])
+    if any(char.isspace() for char in run_dir):
+        die(f"run dir {run_dir!r} contains whitespace; openrsync cannot protect "
+            "remote paths")
+    ensure(host)
     destination = Path(args.dest).expanduser() if args.dest else root / "runs" / entry["run_id"]
     destination.mkdir(parents=True, exist_ok=True)
     command = ["rsync", "-az", "--partial"]
     if not args.include_code:
         command.append("--exclude=/code/")
-    command.extend([f"{host}:{entry['run_dir']}/", f"{destination}/"])
+    command.extend([f"{host}:{run_dir}/", f"{destination}/"])
     result = run(command)
     if result.returncode != 0:
         die(f"rsync failed with exit code {result.returncode}")
