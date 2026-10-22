@@ -556,6 +556,18 @@ class HpcCliTest(unittest.TestCase):
         )
         self.assertIn("hpc login", result.stdout)
 
+    def test_init_detects_alias_in_included_config(self) -> None:
+        ssh_dir = self.home / ".ssh"
+        config_dir = ssh_dir / "config.d"
+        config_dir.mkdir(parents=True)
+        (ssh_dir / "config").write_text(
+            "Include config.d/*\nHost elsewhere\n  HostName example.com\n")
+        (config_dir / "dtu").write_text(
+            "Host dtu\n  HostName login9.hpc.dtu.dk\n  User tester\n")
+        result = self.hpc("init", "--force")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("host = dtu", self.config.read_text())
+
     def test_init_without_alias_refuses_default(self) -> None:
         result = self.hpc("init", "--force")
         self.assertNotEqual(result.returncode, 0)
@@ -740,6 +752,34 @@ class TemplateSourceOrderTest(unittest.TestCase):
             '[ -f "{{SECRETS}}" ] && . "{{SECRETS}}"',
             '[ -f "{{PROJECT_SECRETS}}" ] && . "{{PROJECT_SECRETS}}"',
         ])
+
+
+class SshConfigTest(unittest.TestCase):
+    def setUp(self) -> None:
+        import runpy
+        import types
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.module = types.SimpleNamespace(
+            **runpy.run_path(str(HPC), run_name="hpc_cli")
+        )
+
+    def test_reads_relative_includes_and_nested_files(self) -> None:
+        ssh = Path(self.tmp.name) / ".ssh"
+        nested = ssh / "config.d" / "nested"
+        nested.mkdir(parents=True)
+        (ssh / "config").write_text("Include config.d/*\n")
+        (ssh / "config.d" / "dtu").write_text(
+            "Include nested/*\nHost ignored\n  HostName example.com\n")
+        (nested / "actual").write_text(
+            "Host dtu\n  HostName login9.hpc.dtu.dk\n")
+        self.assertEqual(self.module.dtu_aliases(ssh / "config"), ["dtu"])
+
+    def test_include_cycle_does_not_recurse_forever(self) -> None:
+        ssh = Path(self.tmp.name) / ".ssh"
+        ssh.mkdir()
+        (ssh / "config").write_text("Include config\nHost dtu\n  HostName hpc.dtu.dk\n")
+        self.assertEqual(self.module.dtu_aliases(ssh / "config"), ["dtu"])
 
 
 class ProjectKeyTest(unittest.TestCase):

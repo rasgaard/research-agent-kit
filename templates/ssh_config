@@ -1,4 +1,5 @@
-# ~/.ssh/config — DTU HPC from outside the DTU network.
+# ~/.ssh/config.d/dtu — DTU HPC from outside the DTU network.
+# Include this file from ~/.ssh/config:  Include config.d/dtu
 # Reference: https://www.hpc.dtu.dk/?page_id=4317
 # Outside DTU, auth = key + key passphrase + DTU password. Key-only is not enough.
 # Cache the key passphrase once:  ssh-add --apple-use-keychain ~/.ssh/gbar

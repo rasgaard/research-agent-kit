@@ -7,7 +7,8 @@ Home of the reusable research-assistant setup: the `AGENTS.md` collaboration con
 ```text
 AGENTS.md                    # canonical template (copy verbatim, never per-project edits here)
 skills/research-init/        # opencode skill: "start a new research project"
-  SKILL.md                   # bootstrap procedure, references ../.. /AGENTS.md
+  SKILL.md                   # bootstrap procedure; resolves the kit root through symlinks
+  scripts/bootstrap.py       # static scaffold copy; dry-run and layout test
   templates/README.md        # project README skeleton (goal, commands, layout, glossary)
   templates/github/          # .github/ issue/PR templates copied into new projects
 skills/dtu-hpc/              # optional: DTU LSF workflow (local-first, SHA-pinned jobs)
@@ -17,6 +18,7 @@ bin/hpc                      # stdlib CLI: init/login/ensure/doctor/sync-env/sta
 examples/hf-smoke/           # uv + torch + transformers + datasets p1 job (verified)
 templates/                   # LSF job + smoke templates, ssh_config, config.ini
 tests/test_hpc.py            # stubbed CLI tests (no network)
+tests/test_bootstrap.py      # scaffold dry-run/layout tests
 decisions.md                 # append-only decision log for the kit itself
 decisions-archive.md         # older entries preserved verbatim; indexed from decisions.md
 ```
@@ -31,7 +33,7 @@ python3 -m unittest discover -s tests -q
 
 ## Use in a new project
 
-Say **"start a new research project"** with the skill installed, or manually: copy `AGENTS.md` into the project and follow the bootstrap checklist in `skills/research-init/SKILL.md`. The bootstrap also starts the project README from `templates/README.md` and installs `.github/` issue/PR templates from `skills/research-init/templates/github/`; manual readers should copy those too.
+Say **"start a new research project"** with the skill installed, or manually follow `skills/research-init/SKILL.md`. Its `scripts/bootstrap.py` copies `AGENTS.md`, the README skeleton, `.github/`, HPC templates, and `.gitignore`, and creates `experiments.jsonl`; use `--dry-run` to inspect the layout first.
 
 ## Install the skills
 
@@ -55,7 +57,9 @@ Local-first workflow for DTU's LSF cluster: edit/test on the Mac, ship an immuta
 - **Quotas:** cluster free space is not your allotment; run `getquota_work3.sh` and `getquota_p1.sh` on the login node.
 
 ```bash
-cp templates/ssh_config ~/.ssh/config.d/dtu     # then edit User/HostName; include it from ~/.ssh/config
+mkdir -p ~/.ssh/config.d
+cp templates/ssh_config ~/.ssh/config.d/dtu     # edit User/HostName
+# add `Include config.d/dtu` to ~/.ssh/config (hpc init resolves includes)
 ssh-add --apple-use-keychain ~/.ssh/gbar
 hpc init                        # detect the DTU alias; write ~/.config/dtu-hpc/config.ini
 hpc login                       # one Terminal auth for this session
