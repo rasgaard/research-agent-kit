@@ -945,17 +945,80 @@ def cmd_submit(host: str, args: argparse.Namespace) -> int:
     return 0
 
 
+def format_status(data: dict, include_hosts: bool) -> str:
+    """Render bjobs JSON records as a compact fixed-width table."""
+    headers = ["JOBID", "STAT", "QUEUE", "JOB_NAME", "SUBMIT_TIME",
+               "START_TIME", "ELAPSED"]
+    keys = ["JOBID", "STAT", "QUEUE", "JOB_NAME", "SUBMIT_TIME",
+            "START_TIME", "RUN_TIME"]
+    if include_hosts:
+        headers.extend(["EXEC_HOST", "FROM_HOST"])
+        keys.extend(["EXEC_HOST", "FROM_HOST"])
+
+    rows = []
+    for record in data.get("RECORDS", []):
+        job_id = str(record.get("JOBID", "-")).strip() or "-"
+        index = str(record.get("JOBINDEX", "") or "").strip()
+        if index and index != "-":
+            job_id = f"{job_id}[{index}]"
+        row = []
+        for key in keys:
+            value = str(record.get(key, "") or "").strip() or "-"
+            if key == "RUN_TIME" and record.get("STAT") == "PEND":
+                value = "-"
+            row.append(value)
+        row[0] = job_id
+        rows.append(row)
+
+    widths = [max([len(headers[i]), *(len(row[i]) for row in rows)])
+              for i in range(len(headers))]
+    lines = ["  ".join(value.ljust(widths[i]) for i, value in enumerate(headers)).rstrip()]
+    for row in rows:
+        lines.append("  ".join(value.ljust(widths[i]) for i, value in enumerate(row)).rstrip())
+    return "\n".join(lines)
+
+
 def cmd_status(host: str, args: argparse.Namespace) -> int:
+    if args.detail and not args.job_id:
+        die("--detail requires a job id")
+    if args.detail and args.hosts:
+        die("--hosts cannot be combined with --detail")
     ensure(host)
-    if args.job_id:
+    if args.detail:
         script = ('if command -v bstat >/dev/null 2>&1; then bstat "$1"; '
                   'else bjobs -w "$1"; fi')
-    else:
-        script = ('if command -v bjobs >/dev/null 2>&1; then bjobs -w; '
-                  'else bstat; fi')
+        result = ssh_login(host, script, [args.job_id], check=False)
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        return result.returncode
+
+    fields = "jobid jobindex stat queue job_name submit_time start_time run_time"
+    if args.hosts:
+        fields += " exec_host from_host"
+    script = (f'if command -v bjobs >/dev/null 2>&1; then '
+              f'bjobs -o {shlex.quote(fields)} -json')
+    if args.job_id:
+        script += ' "$1"'
+    script += '; else bstat'
+    if args.job_id:
+        script += ' "$1"'
+    script += '; fi'
     result = ssh_login(host, script, [args.job_id] if args.job_id else [], check=False)
-    sys.stdout.write(result.stdout)
-    sys.stderr.write(result.stderr)
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        return result.returncode
+    records = data.get("RECORDS", [])
+    errors = [record["ERROR"] for record in records if "ERROR" in record]
+    if errors:
+        for error in errors:
+            print(f"hpc: {error}", file=sys.stderr)
+        return 1
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    print(format_status(data, args.hosts))
     return result.returncode
 
 
@@ -1131,8 +1194,12 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--dry-run", action="store_true")
     submit.set_defaults(func=cmd_submit)
 
-    status = sub.add_parser("status", help="bjobs for all jobs, bstat for one")
+    status = sub.add_parser("status", help="compact job table; bstat with --detail")
     status.add_argument("job_id", nargs="?")
+    status.add_argument("--hosts", action="store_true",
+                        help="include EXEC_HOST and FROM_HOST")
+    status.add_argument("--detail", action="store_true",
+                        help="use bstat for one job (pending reasons, array history)")
     status.set_defaults(func=cmd_status)
 
     logs = sub.add_parser("logs", help="bpeek or tail the job logs")

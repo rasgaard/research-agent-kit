@@ -41,6 +41,7 @@ class HpcCliTest(unittest.TestCase):
                 [ "${HPC_TEST_DEAD:-0}" = 1 ] && exit 1
                 exit 0 ;;
               *"bsub"*) printf 'Job <123> is submitted to queue <gpua100>.\\n' ;;
+              *"-json"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
               *"bstat"*) printf 'JOBID USER QUEUE JOB_NAME NALLOC STAT\\n' ;;
               *"bjobs"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
               *"%T@"*) [ -n "${HPC_TEST_LOG_STATS:-}" ] && cat "$HPC_TEST_LOG_STATS" ;;
@@ -210,17 +211,91 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("uncapped array", result.stderr)
 
-    def test_status_no_id_lists_all_jobs(self) -> None:
-        result = self.hpc("status")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("bjobs -w", self.log.read_text())
+    def status_jobs(self, include_hosts: bool = False) -> Path:
+        records = [
+            {
+                "JOBID": "123",
+                "JOBINDEX": "4",
+                "STAT": "RUN",
+                "QUEUE": "p1",
+                "JOB_NAME": "exp[4]",
+                "SUBMIT_TIME": "Oct 22 09:13:41 2026",
+                "START_TIME": "Oct 22 09:14:00 2026",
+                "RUN_TIME": "00:10:00",
+                "EXEC_HOST": "node1",
+                "FROM_HOST": "login9",
+            },
+            {
+                "JOBID": "123",
+                "JOBINDEX": "5",
+                "STAT": "PEND",
+                "QUEUE": "p1",
+                "JOB_NAME": "exp[5]",
+                "SUBMIT_TIME": "Oct 22 09:13:41 2026",
+                "START_TIME": "",
+                "RUN_TIME": "00:00:00",
+                "EXEC_HOST": "",
+                "FROM_HOST": "login9",
+            },
+        ]
+        if not include_hosts:
+            for record in records:
+                record.pop("EXEC_HOST", None)
+                record.pop("FROM_HOST", None)
+        path = Path(self.tmp.name) / "bjobs.json"
+        path.write_text(json.dumps({"COMMAND": "bjobs", "JOBS": 2, "RECORDS": records}))
+        return path
 
-    def test_status_id_uses_bstat(self) -> None:
-        result = self.hpc("status", "123")
+    def test_status_no_id_lists_all_jobs(self) -> None:
+        bjobs = self.status_jobs()
+        result = self.hpc("status", extra_env={"HPC_TEST_BJOBS": str(bjobs)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("bjobs", self.log.read_text())
+        self.assertIn("-json", self.log.read_text())
+        self.assertIn("JOBID", result.stdout)
+        self.assertIn("START_TIME", result.stdout)
+        self.assertIn("ELAPSED", result.stdout)
+        self.assertIn("123[4]", result.stdout)
+        self.assertIn("Oct 22 09:14:00 2026", result.stdout)
+        self.assertIn("00:10:00", result.stdout)
+        self.assertIn("123[5]", result.stdout)
+        self.assertNotIn("USER", result.stdout)
+        self.assertNotIn("FROM_HOST", result.stdout)
+        self.assertNotIn("EXEC_HOST", result.stdout)
+
+    def test_status_hosts_adds_debug_columns(self) -> None:
+        bjobs = self.status_jobs(include_hosts=True)
+        result = self.hpc("status", "--hosts", extra_env={"HPC_TEST_BJOBS": str(bjobs)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("EXEC_HOST", result.stdout)
+        self.assertIn("FROM_HOST", result.stdout)
+        self.assertIn("node1", result.stdout)
+        self.assertIn("login9", result.stdout)
+
+    def test_status_id_formats_job(self) -> None:
+        bjobs = self.status_jobs()
+        result = self.hpc("status", "123", extra_env={"HPC_TEST_BJOBS": str(bjobs)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('bjobs -o', self.log.read_text())
+        self.assertIn("hpc 123", self.log.read_text())
+        self.assertIn("123[4]", result.stdout)
+        self.assertIn("ELAPSED", result.stdout)
+
+    def test_status_detail_uses_bstat(self) -> None:
+        result = self.hpc("status", "123", "--detail")
         self.assertEqual(result.returncode, 0, result.stderr)
         log = self.log.read_text()
         self.assertIn('bstat "$1"', log)
         self.assertIn("123", log)
+
+    def test_status_json_error_record_fails(self) -> None:
+        bjobs = Path(self.tmp.name) / "bjobs-error.json"
+        bjobs.write_text(json.dumps({"RECORDS": [
+            {"JOBID": "999", "ERROR": "Job <999> is not found"}]}))
+        result = self.hpc("status", "999", extra_env={"HPC_TEST_BJOBS": str(bjobs)})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Job <999> is not found", result.stderr)
+        self.assertNotIn("JOBID", result.stdout)
 
     def test_pull_skips_code_by_default(self) -> None:
         self.add_ledger()
