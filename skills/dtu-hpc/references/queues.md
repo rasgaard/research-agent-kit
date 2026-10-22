@@ -7,10 +7,10 @@ Sources: <https://www.hpc.dtu.dk/?page_id=2759>, <https://www.hpc.dtu.dk/?page_i
 | Tier | Where | Use for | Lifetime |
 |---|---|---|---|
 | Local CPU | Mac | unit tests, 10-step run, shape/NaN checks | seconds |
-| Interactive GPU | `a100sh`, `voltash`, `sxm2sh`, `p1i` (shared, in `tmux`) | import/CUDA check, one forward/backward, profiling | minutes |
+| Interactive GPU | `a100sh`, `voltash`, `sxm2sh` via `hpc gpu <kind>`; `p1i` via `p1gpush` (all shared, in `tmux`) | import/CUDA check, one forward/backward, profiling | minutes |
 | Batch GPU/CPU | `gpua100`, `gpul40s`, `gpuv100`, `gpua10`, `gpua40`, `hpc` | real runs, sweeps | GPU ≤24 h, CPU ≤72 h |
 
-Interactive nodes are the debug queue; batch is never used to discover that a job crashes at import.
+`p1i` is an interactive queue, not a valid `hpc gpu` argument: use `hpc gpu p1` (which runs `p1gpush`). Interactive nodes are the debug queue; batch is never used to discover that a job crashes at import.
 
 ## Queue selection: `p1` by default
 

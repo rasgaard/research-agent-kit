@@ -8,6 +8,9 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 MODEL_ID = os.environ.get("MODEL_ID", "hf-internal-testing/tiny-random-bert")
+MODEL_REVISION = "f171d7baecaf37b5da5a3616d8833b9969753535"
+DATASET_ID = "nyu-mll/glue"
+DATASET_REVISION = "bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c"
 BATCH_SIZE = 8
 STEPS = 8
 
@@ -20,9 +23,17 @@ def main() -> None:
     if device.type == "cuda":
         print(f"device={torch.cuda.get_device_name(0)}")
 
-    dataset = load_dataset("nyu-mll/glue", "mrpc", split="train[:64]")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, num_labels=2)
+    print(f"model={MODEL_ID}@{MODEL_REVISION}")
+    print(f"dataset={DATASET_ID}@{DATASET_REVISION}")
+    dataset = load_dataset(
+        DATASET_ID, "mrpc", split="train[:64]", revision=DATASET_REVISION
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        MODEL_ID, revision=MODEL_REVISION, use_fast=True
+    )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_ID, revision=MODEL_REVISION, num_labels=2
+    )
     model.to(device)
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
