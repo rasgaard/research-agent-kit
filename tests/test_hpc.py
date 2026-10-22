@@ -81,13 +81,14 @@ class HpcCliTest(unittest.TestCase):
         self.git("add", "job.lsf")
         self.git("commit", "-qm", "job")
 
-    def add_ledger(self, job_id: int = 123, submitted_at: str | None = None) -> None:
+    def add_ledger(self, job_id: int = 123, submitted_at: str | None = None,
+                   run_dir: str | None = None) -> None:
         path = self.repo / ".git" / "hpc" / "jobs.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "job_id": job_id,
             "run_id": f"20260101T000000Z-{job_id}",
-            "run_dir": f"/work3/tester/hpc/proj/jobs/20260101T000000Z-{job_id}",
+            "run_dir": run_dir or f"/work3/tester/hpc/proj/jobs/20260101T000000Z-{job_id}",
         }
         if submitted_at:
             entry["submitted_at"] = submitted_at
@@ -156,6 +157,27 @@ class HpcCliTest(unittest.TestCase):
         self.assertIn("#BSUB -q p1", result.stdout)
         self.assertIn("overrides script queue gpua100", result.stderr)
 
+    def test_queue_newline_injection_is_refused(self) -> None:
+        result = self.hpc("submit", "job.lsf", "--queue", "p1\n#BSUB -q evil")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid queue", result.stderr)
+        self.assertNotIn("#BSUB -q evil", result.stdout)
+        self.assertFalse(self.log.exists())
+
+    def test_invalid_job_names_are_refused(self) -> None:
+        for name in ("bad name", "bad\nname", "bad;name", "bad$(id)"):
+            with self.subTest(name=name):
+                result = self.hpc("submit", "job.lsf", "--name", name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("invalid job name", result.stderr)
+                self.assertFalse(self.log.exists())
+
+    def test_array_job_name_is_accepted(self) -> None:
+        result = self.hpc("submit", "job.lsf", "--name", "sweep[1-3]%2",
+                          "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("#BSUB -J sweep[1-3]%2", result.stdout)
+
     def test_uncapped_array_is_refused(self) -> None:
         self.write_job("""\
             #BSUB -q gpua100
@@ -213,6 +235,13 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("--exclude=/code/", self.log.read_text())
         self.assertNotIn("excluded code/", result.stderr)
+
+    def test_pull_rejects_whitespace_in_run_dir(self) -> None:
+        self.add_ledger(run_dir="/work3/tester/hpc/proj/jobs/bad dir")
+        result = self.hpc("pull", "123")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("contains whitespace", result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_logs_array_index_selects_one_element(self) -> None:
         self.add_ledger()
