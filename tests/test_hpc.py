@@ -45,6 +45,9 @@ class HpcCliTest(unittest.TestCase):
               *"bjobs"*) [ -n "${HPC_TEST_BJOBS:-}" ] && cat "$HPC_TEST_BJOBS" ;;
               *"%T@"*) [ -n "${HPC_TEST_LOG_STATS:-}" ] && cat "$HPC_TEST_LOG_STATS" ;;
               *"-printf"*) [ -n "${HPC_TEST_LOG_NAMES:-}" ] && cat "$HPC_TEST_LOG_NAMES" ;;
+              *"tail -F"*|*"tail -n"*) printf 'STUB-TAIL-OUTPUT\\n' ;;
+              *"tmux"*) printf 'STUB-INTERACTIVE-OUTPUT\\n' ;;
+              *"bpeek"*) printf 'STUB-BPEEK-OUTPUT\\n' ;;
               *"printf"*) printf 'tester\\n/home/tester\\n' ;;
             esac
             [ "${HPC_TEST_STALE:-0}" = 1 ] && exit 255
@@ -225,6 +228,47 @@ class HpcCliTest(unittest.TestCase):
         self.assertIn("123-load-1.out", result.stderr)
         self.assertIn("123-load-1.err", result.stderr)
         self.assertNotIn("123-load-2.out", result.stderr)
+
+    def test_logs_prints_tail_output(self) -> None:
+        self.add_ledger()
+        names = Path(self.tmp.name) / "log-names"
+        names.write_text("123.out\n123.err\n")
+        result = self.hpc("logs", "123",
+                          extra_env={"HPC_TEST_LOG_NAMES": str(names)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STUB-TAIL-OUTPUT", result.stdout)
+
+    def test_logs_follow_streams_tail_output(self) -> None:
+        self.add_ledger()
+        names = Path(self.tmp.name) / "log-names"
+        names.write_text("123.out\n")
+        result = self.hpc("logs", "123", "-f",
+                          extra_env={"HPC_TEST_LOG_NAMES": str(names)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STUB-TAIL-OUTPUT", result.stdout)
+
+    def test_logs_without_ledger_uses_visible_bpeek(self) -> None:
+        result = self.hpc("logs", "123")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STUB-BPEEK-OUTPUT", result.stdout)
+
+    def test_logs_missing_is_actionable(self) -> None:
+        self.add_ledger()
+        result = self.hpc("logs", "123")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("may still be starting", result.stderr)
+        self.assertIn("hpc status 123", result.stderr)
+
+    def test_shell_attaches_terminal(self) -> None:
+        result = self.hpc("shell")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STUB-INTERACTIVE-OUTPUT", result.stdout)
+        self.assertIn("-t test", self.log.read_text())
+
+    def test_gpu_attaches_terminal(self) -> None:
+        result = self.hpc("gpu", "a100")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STUB-INTERACTIVE-OUTPUT", result.stdout)
 
     def test_watch_emits_terminal_failure_once(self) -> None:
         self.add_ledger()

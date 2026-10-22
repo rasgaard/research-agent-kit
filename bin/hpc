@@ -83,8 +83,9 @@ def load_config() -> dict[str, str]:
 
 
 def ssh(host: str, args: list[str], input: Optional[bytes] = None, text: bool = True,
-        tty: bool = False, check: bool = False) -> subprocess.CompletedProcess:
-    cmd = ["ssh", *(["-t"] if tty else []), host, *args]
+        check: bool = False) -> subprocess.CompletedProcess:
+    """Run a remote command and capture its output for parsing."""
+    cmd = ["ssh", host, *args]
     kwargs = {"input": input} if input is not None else {"stdin": subprocess.DEVNULL}
     result = run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, **kwargs)
     if check and result.returncode != 0:
@@ -93,22 +94,38 @@ def ssh(host: str, args: list[str], input: Optional[bytes] = None, text: bool = 
     return result
 
 
-def ssh_login(host: str, script: str, args: Optional[list[str]] = None,
-              **kwargs) -> subprocess.CompletedProcess:
-    """Run a remote script in a login shell so LSF (bsub/bstat/bpeek) is on PATH."""
+def ssh_stream(host: str, args: list[str], tty: bool = False) -> int:
+    """Run a remote command with the caller's terminal attached."""
+    cmd = ["ssh", *(["-t"] if tty else []), host, *args]
+    try:
+        return run(cmd).returncode
+    except KeyboardInterrupt:
+        return 130
+
+
+def login_command(script: str, args: Optional[list[str]] = None) -> str:
     command = "bash -lc " + shlex.quote(script)
     if args:
         command += " hpc " + " ".join(shlex.quote(arg) for arg in args)
-    return ssh(host, [command], **kwargs)
+    return command
+
+
+def ssh_login(host: str, script: str, args: Optional[list[str]] = None,
+              **kwargs) -> subprocess.CompletedProcess:
+    """Run a remote script in a login shell so LSF (bsub/bstat/bpeek) is on PATH."""
+    return ssh(host, [login_command(script, args)], **kwargs)
+
+
+def ssh_login_stream(host: str, script: str, args: Optional[list[str]] = None,
+                     tty: bool = False) -> int:
+    """Run a login-shell command with inherited stdin/stdout/stderr."""
+    return ssh_stream(host, [login_command(script, args)], tty=tty)
 
 
 def ssh_login_batch(host: str, script: str,
                     args: Optional[list[str]] = None) -> subprocess.CompletedProcess:
     """Run a login-shell probe without ever prompting for authentication."""
-    command = "bash -lc " + shlex.quote(script)
-    if args:
-        command += " hpc " + " ".join(shlex.quote(arg) for arg in args)
-    return ssh_batch(host, [command])
+    return ssh_batch(host, [login_command(script, args)])
 
 
 def socket_alive(host: str) -> bool:
@@ -784,8 +801,8 @@ def cmd_shell(host: str, args: argparse.Namespace) -> int:
     ensure(host)
     print("hpc: shared CPU node via linuxsh (not the login node); tmux session "
           f"'{args.session}'", file=sys.stderr)
-    return ssh_login(host, 'tmux new -A -s "$1" linuxsh', [args.session],
-                     tty=True).returncode
+    return ssh_login_stream(host, 'tmux new -A -s "$1" linuxsh',
+                            [args.session], tty=True)
 
 
 def cmd_gpu(host: str, args: argparse.Namespace) -> int:
@@ -794,12 +811,12 @@ def cmd_gpu(host: str, args: argparse.Namespace) -> int:
     if args.kind == "p1":
         print(f"hpc: p1gpush (2 shared H100s; short tests only) in tmux '{session}'",
               file=sys.stderr)
-        return ssh_login(host, 'tmux new -A -s "$1" bash -lc "$2"',
-                         [session, P1_GPU_COMMAND], tty=True).returncode
+        return ssh_login_stream(host, 'tmux new -A -s "$1" bash -lc "$2"',
+                                [session, P1_GPU_COMMAND], tty=True)
     command = GPU_NODES[args.kind]
     print(f"hpc: {command} (shared node; short tests only) in tmux '{session}'", file=sys.stderr)
-    return ssh_login(host, 'tmux new -A -s "$1" "$2"', [session, command],
-                     tty=True).returncode
+    return ssh_login_stream(host, 'tmux new -A -s "$1" "$2"',
+                            [session, command], tty=True)
 
 
 def cmd_stage(host: str, args: argparse.Namespace) -> int:
@@ -938,7 +955,7 @@ def cmd_logs(host: str, args: argparse.Namespace) -> int:
     if not entry:
         if args.follow or args.index is not None:
             die(f"job {args.job_id} not in the local ledger; cannot locate its logs")
-        return ssh_login(host, 'exec bpeek "$1"', [args.job_id], check=False).returncode
+        return ssh_login_stream(host, 'exec bpeek "$1"', [args.job_id])
 
     logdir = f"{entry['run_dir']}/logs"
     result = ssh_login(
@@ -949,12 +966,13 @@ def cmd_logs(host: str, args: argparse.Namespace) -> int:
     names = log_file_names(result.stdout.splitlines(), args.job_id, args.index)
     if not names:
         hint = f" (index {args.index})" if args.index is not None else ""
-        die(f"no logs{hint} found under {logdir}")
+        die(f"no logs{hint} found under {logdir}; "
+            f"the job may still be starting (retry, or run hpc status {args.job_id})")
     files = [f"{logdir}/{name}" for name in names]
     print(f"hpc: logs {', '.join(names)}", file=sys.stderr)
     if args.follow:
-        return ssh_login(host, 'tail -F "$@"', files, tty=True).returncode
-    return ssh_login(host, 'tail -n 50 "$@"', files, check=False).returncode
+        return ssh_login_stream(host, 'tail -F "$@"', files)
+    return ssh_login_stream(host, 'tail -n 50 "$@"', files)
 
 
 def cmd_pull(host: str, args: argparse.Namespace) -> int:
