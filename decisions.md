@@ -93,3 +93,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: trust `ssh -O check` (the bug; rejected); always start a new master (ControlSocket conflict; rejected); drop multiplexing (breaks one-auth-per-session; rejected); prompt during the probe (watchers cannot authenticate; rejected).
 - Refs: #44; PR #62.
 - Tags: hpc, auth, ssh, reliability.
+
+## 2026-10-22 — Make secret writes failure-aware and atomic
+
+- Context: `hpc secret set` read the remote file locally with `check=False`, merged possibly-empty output, and wrote directly to the final path; a failed read could delete every other key, and a disconnect or concurrent call could truncate or lose updates.
+- Decision: move the merge to the cluster under `flock`; require a readable regular file if one exists, write a mode-600 temp file in the same directory, and atomically rename it. Send the value over stdin, filter `secret list` to valid `NAME=value` keys, and abort rather than returning partial data on read failure.
+- Alternatives: keep local merge with a read-back/revision check (still races between read and write; rejected); `mkdir` lock directory (stale after crashes; rejected); direct `chmod` after overwrite (readable window remains; rejected).
+- Refs: #45; PR #63.
+- Tags: hpc, secrets, atomicity, security, reliability.
