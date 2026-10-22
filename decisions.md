@@ -75,5 +75,5 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Context: commit history mixed styles (`fix:`, `docs:`, `hpc:`, `decisions:`), and the contract only said to match repo style, so agents inferred conventions independently and could diverge across projects.
 - Decision: §3 now requires `<type>: <imperative summary>` with the type matching the branch type (`feat`, `fix`, `docs`, `test`, `refactor`, `chore`), an optional scope (`fix(hpc): ...`), and a subject under ~72 characters; merge commits are exempt. Contract → v1.5.
 - Alternatives: leave it implicit (drift recurs; rejected); mandatory Conventional Commits scopes (too rigid for small repos; rejected); free-form area prefixes like `hpc:` (ambiguous type; rejected).
-- Refs: #58.
+- Refs: #58; PR #59.
 - Tags: git, commits, workflow, template.
