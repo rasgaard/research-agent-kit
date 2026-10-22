@@ -12,7 +12,7 @@ Source: <https://www.hpc.dtu.dk/?page_id=4317> (DTU DCC).
 
 ## One authentication per session
 
-`~/.ssh/config` (copy `templates/ssh_config`):
+`~/.ssh/config` or an included file such as `~/.ssh/config.d/dtu` (copy `templates/ssh_config`):
 
 ```sshconfig
 Host dtu
@@ -28,7 +28,7 @@ Host dtu
   TCPKeepAlive yes
 ```
 
-- `hpc init` detects this `Host` block and writes `~/.config/dtu-hpc/config.ini`; use `--ssh-host <alias>` if the parser misses an included file.
+- `hpc init` detects this `Host` block, including files pulled in with `Include`, and writes `~/.config/dtu-hpc/config.ini`; use `--ssh-host <alias>` if detection is ambiguous.
 - `ssh-add --apple-use-keychain ~/.ssh/gbar` stores the **key passphrase** in the macOS Keychain (Touch ID/unlock). The DTU password is still typed once.
 - The first `ssh dtu` asks passphrase + DTU password. All later `ssh`, `scp`, `rsync`, `bsub` calls reuse the socket with no prompt.
 - macOS sleep or a network change can leave a stale socket. `hpc login`/`hpc ensure` run a bounded `BatchMode=yes` remote probe; if it fails, the stale master is closed and authentication is reopened, or you get the exact `ssh -O exit ... && hpc login` command. `hpc doctor` never prompts: a dead or stale master tells you to run `hpc login`.

@@ -5,7 +5,7 @@ description: Use when the user says start/init/bootstrap a new research project,
 
 # Research-Init
 
-Bootstrap a new research project so the issue → branch → PR research-assistant workflow works from the first commit. The canonical `AGENTS.md` lives at this repo's root — always copy from there, never rewrite it from memory. (When installed, this file sits at `<repo>/skills/research-init/SKILL.md`, so the template is two levels up.)
+Bootstrap a new research project so the issue → branch → PR research-assistant workflow works from the first commit. The canonical `AGENTS.md` lives at the kit root — always copy from there, never rewrite it from memory. Installed skills are symlinks, so resolve this file first; do not assume `../..` from the link path is the kit root.
 
 ## Procedure
 
@@ -19,12 +19,18 @@ Bootstrap a new research project so the issue → branch → PR research-assista
    ```
 
    No other dependencies without asking.
-3. **Copy the contract.** Copy `<repo>/AGENTS.md` to `./AGENTS.md` verbatim. Never edit it during bootstrap.
-4. **Fill in the kit files** (one pass — this is everything the first PR in step 6 ships besides the scaffold):
+3. **Copy the static kit files.** Resolve the skill through its symlink, then run the scaffold script:
+   ```bash
+   SKILL_DIR="$(dirname "$(realpath ~/.config/opencode/skills/research-init/SKILL.md)")"
+   python3 "$SKILL_DIR/scripts/bootstrap.py" --target . --dry-run
+   python3 "$SKILL_DIR/scripts/bootstrap.py" --target . --force
+   ```
+   This copies `AGENTS.md` verbatim, `.gitignore` (including `runs/`), the README skeleton, `.github/`, and the HPC `templates/` (`job.lsf`, `smoke.lsf`, `config.ini`, `ssh_config`), and creates an empty `experiments.jsonl`. `--force` is safe here on a fresh scaffold and replaces files `uv init` just created. Inspect the dry-run output first.
+4. **Fill in the project files** (one pass — this is everything the first PR in step 6 ships besides the scaffold):
    1. `decisions.md` — title line plus the header paragraph deferring to the §1 entry format.
-   2. `.gitignore` — run artefacts (`outputs/`, `.venv/`, …); small review figures stay committable per §2.
-   3. `README.md` — start from this skill's `templates/README.md` and fill in the goal, commands (recording `uv run pytest`), and layout. Draft it from the scope answers; the human owns and refines it.
-   4. `.github/` — copy this skill's `templates/github/` verbatim — issue/PR templates for web-UI filings; agent `--body-file` posts don't read them.
+   2. `README.md` — edit the copied skeleton with the goal, commands (recording `uv run pytest`), and layout. Draft it from the scope answers; the human owns and refines it.
+   3. `.gitignore` — add project-specific artefacts; the copied file already ignores `runs/`, `.venv/`, and caches.
+   4. `experiments.jsonl` — starts empty; add rows only when you have measured results.
 5. **Create the remote (only if confirmed in step 1).** Commit the scaffold, then `gh repo create <name> --private --description "<one-sentence goal>" --source=. --push`, and let merged branches clean themselves up: `gh repo edit --delete-branch-on-merge`. If the user declined a remote, stop after the local commit and hand over — the first PR happens once a remote exists.
 6. **First issue → PR (when a remote exists).** Draft and file the first issue yourself (bootstrap + smoke test), branch `feat/1-<slug>`, commit, and open a PR that closes it — one reviewable slice proving the workflow end-to-end, not one issue per bootstrap step. The repo's test command (`uv run pytest`) must pass; quote its output in the PR.
 7. **Hand over.** Summarize what was created and link the first issue; do not start implementing research code unprompted.

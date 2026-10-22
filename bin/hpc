@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import getpass
+import glob
 import hashlib
 import json
 import os
@@ -166,10 +167,43 @@ def remote_alive(host: str) -> bool:
     return result.returncode == 0
 
 
+def ssh_config_files(path: Path, seen: Optional[set[Path]] = None) -> list[Path]:
+    """Return an SSH config and its Include files, recursively and in order."""
+    if seen is None:
+        seen = set()
+    path = path.expanduser()
+    if not path.is_file():
+        return []
+    resolved = path.resolve()
+    if resolved in seen:
+        return []
+    seen.add(resolved)
+    files = [path]
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split(None, 1)
+        if len(parts) < 2 or parts[0].lower() != "include":
+            continue
+        try:
+            patterns = shlex.split(parts[1])
+        except ValueError:
+            patterns = [parts[1]]
+        for pattern in patterns:
+            candidate = Path(pattern).expanduser()
+            if not candidate.is_absolute():
+                candidate = path.parent / candidate
+            matches = sorted(glob.glob(str(candidate)))
+            if not matches and candidate.exists():
+                matches = [str(candidate)]
+            for match in matches:
+                files.extend(ssh_config_files(Path(match), seen))
+    return files
+
+
 def dtu_aliases(path: Path) -> list[str]:
     """Return SSH aliases whose Host/HostName points at DTU HPC."""
-    if not path.exists():
-        return []
     aliases: list[str] = []
     pending: list[str] = []
     hostname = ""
@@ -182,17 +216,18 @@ def dtu_aliases(path: Path) -> list[str]:
         pending = []
         hostname = ""
 
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        parts = line.split()
-        key = parts[0].lower()
-        if key == "host" and len(parts) > 1:
-            flush()
-            pending = parts[1:]
-        elif key == "hostname" and len(parts) > 1:
-            hostname = parts[1]
+    for config in ssh_config_files(path):
+        for raw in config.read_text(encoding="utf-8").splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            key = parts[0].lower()
+            if key == "host" and len(parts) > 1:
+                flush()
+                pending = parts[1:]
+            elif key == "hostname" and len(parts) > 1:
+                hostname = parts[1]
     flush()
     result: list[str] = []
     for alias in aliases:
