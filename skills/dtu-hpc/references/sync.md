@@ -85,7 +85,7 @@ The file is `~/.config/dtu-hpc/secrets.env` on the cluster, mode 600. Source it 
 python -u train.py
 ```
 
-Values never appear in argv, the repo, or the CLI log. `hpc secret set` merges one key and preserves other lines; it does not print the value.
+Values never appear in argv, the repo, or the CLI log. `hpc secret set` takes a remote lock, merges one key, writes a mode-600 temporary file, and atomically replaces the file; it aborts if the existing file cannot be read and does not print the value.
 
 ## Results
 
