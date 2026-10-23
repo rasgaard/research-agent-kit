@@ -10,7 +10,7 @@ final class SnapshotTests: XCTestCase {
       "records": [
         {"elapsed_seconds": 600, "job_id": "123", "index": "4", "key": "123[4]",
          "name": "train", "queue": "gpua100", "run_time": "00:10:00", "stat": "RUN",
-         "start_time": "Oct 23 11:50", "submit_time": "Oct 23 11:40"},
+         "start_time": "Oct 23 11:50:00 2026", "submit_time": "Oct 23 11:40"},
         {"elapsed_seconds": null, "job_id": "124", "index": null, "key": "124",
          "name": "eval", "queue": "p1", "run_time": "", "stat": "PEND",
          "start_time": "", "submit_time": "Oct 23 11:45"},
@@ -54,8 +54,53 @@ final class SnapshotTests: XCTestCase {
 
     func testOldSnapshotIsStale() throws {
         let snapshot = try XCTUnwrap(StatusRunner.decode(Data(cliJSON.utf8), fetchedAt: fetched))
-        let later = fetched.addingTimeInterval(StatusSnapshot.staleAfter + 1)
+        let later = fetched.addingTimeInterval(snapshot.staleAfter + 1)
         XCTAssertEqual(snapshot.displayState(now: later), .stale)
+    }
+
+    func testStaleThresholdFollowsRefreshInterval() {
+        let snapshot = StatusRunner.failure(host: "h", error: "x", message: "y", refreshSeconds: 600)
+        XCTAssertEqual(snapshot.staleAfter, 1200)
+    }
+
+    func testRefreshIntervalDefaultsAndClamps() {
+        XCTAssertEqual(WidgetSettings.refreshSeconds(fromMinutes: nil), 600)
+        XCTAssertEqual(WidgetSettings.refreshSeconds(fromMinutes: "garbage"), 600)
+        XCTAssertEqual(WidgetSettings.refreshSeconds(fromMinutes: "5"), 300)
+        XCTAssertEqual(WidgetSettings.refreshSeconds(fromMinutes: " 0 "), 60)
+        XCTAssertEqual(WidgetSettings.refreshSeconds(fromMinutes: "500"), 3600)
+    }
+
+    func testDecodedSnapshotCarriesRefreshInterval() throws {
+        let snapshot = try XCTUnwrap(StatusRunner.decode(Data(cliJSON.utf8), fetchedAt: fetched,
+                                                          refreshSeconds: 300))
+        XCTAssertEqual(snapshot.refreshSeconds, 300)
+        XCTAssertEqual(snapshot.staleAfter, 600)
+    }
+
+    func testRunningJobParsesStartTimeAndPendingSaysNotStarted() throws {
+        let snapshot = try XCTUnwrap(StatusRunner.decode(Data(cliJSON.utf8), fetchedAt: fetched))
+        let running = snapshot.records[0]
+        XCTAssertNotNil(running.startDate)
+        XCTAssertTrue(running.startedLabel.hasPrefix("since "))
+        XCTAssertEqual(snapshot.records[1].startedLabel, "not started")
+    }
+
+    func testStartTimeParsesLSFFormatInLocalTime() throws {
+        let job = try JSONDecoder().decode(JobRecord.self, from: Data("""
+        {"job_id": "1", "key": "1", "stat": "RUN", "queue": "p1", "name": "x",
+         "run_time": "00:01:00", "start_time": "Oct 3 08:54:12 2026"}
+        """.utf8))
+        let date = try XCTUnwrap(job.startDate)
+        let parts = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: date)
+        XCTAssertEqual([parts.month, parts.day, parts.hour, parts.minute], [10, 3, 8, 54])
+    }
+
+    func testRecordWithoutStartTimeStillDecodes() throws {
+        let job = try JSONDecoder().decode(JobRecord.self, from: Data("""
+        {"job_id": "1", "key": "1", "stat": "PEND", "queue": "p1", "name": "x", "run_time": ""}
+        """.utf8))
+        XCTAssertNil(job.startDate)
     }
 
     func testAuthErrorRequiresLoginAndDecodesWithoutRecords() throws {

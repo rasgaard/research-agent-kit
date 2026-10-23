@@ -68,6 +68,7 @@ struct SettingsView: View {
                     Text(job.key).font(.caption.monospaced())
                     Text(job.name).lineLimit(1).truncationMode(.middle)
                     Spacer()
+                    Text(job.startedLabel).font(.caption).foregroundStyle(.secondary)
                     Text(job.queue).font(.caption).foregroundStyle(.secondary)
                 }
             }

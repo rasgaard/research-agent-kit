@@ -18,7 +18,8 @@ struct StatusProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<StatusEntry>) -> Void) {
         let now = Date()
         let entry = StatusEntry(date: now, snapshot: SnapshotStore.load())
-        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(300))))
+        let refresh = entry.snapshot?.refreshSeconds ?? WidgetSettings.defaultRefreshSeconds
+        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(TimeInterval(refresh)))))
     }
 }
 
@@ -72,6 +73,9 @@ struct StatusWidgetView: View {
                     Text(job.stat).foregroundStyle(color(for: job.stat))
                     Text(job.name).lineLimit(1)
                     Spacer(minLength: 0)
+                    if family != .systemSmall {
+                        Text(job.startedLabel).foregroundStyle(.secondary)
+                    }
                 }
                 .font(.caption.monospaced())
             }

@@ -93,8 +93,9 @@ cp -R "$(xcodebuild -project DTUHPCStatus.xcodeproj -scheme DTUHPC -configuratio
 open /Applications/DTUHPC.app          # then right-click the desktop → Edit Widgets → DTU HPC Jobs
 ```
 
+- **Refresh:** every 10 minutes by default. Set `[widget] refresh_minutes = 5` (1–60) in `~/.config/dtu-hpc/config.ini`; restart the app to apply.
 - **Auth boundary:** the widget and app never prompt for SSH. When the master is dead the snapshot says `login required`; click **Login to HPC** (opens Terminal running `hpc login`) to re-authenticate.
-- **Stale:** a snapshot older than 15 minutes is shown as stale; a failed poll is shown as an explicit error.
+- **Stale:** a snapshot older than two refresh intervals is shown as stale; a failed poll is shown as an explicit error.
 - **Tests:** `xcodebuild -project widget/DTUHPCStatus.xcodeproj -scheme DTUHPC test`.
 - **Launch at login** uses `SMAppService`, which cannot pass `--background`, so the login launch also opens the window; close it and the app keeps polling. Install in `/Applications` so the login item resolves reliably.
 

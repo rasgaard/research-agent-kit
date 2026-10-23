@@ -14,26 +14,35 @@ enum StatusRunner {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    static func configuredHost() -> String {
+    static func configValue(section wanted: String, key: String) -> String? {
         let url = SnapshotStore.homeDirectory.appendingPathComponent(".config/dtu-hpc/config.ini")
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
-        var inHPC = false
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        var inSection = false
         for raw in text.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("[") { inHPC = line == "[hpc]"; continue }
-            guard inHPC, let eq = line.firstIndex(of: "=") else { continue }
-            if line[..<eq].trimmingCharacters(in: .whitespaces) == "host" {
+            if line.hasPrefix("[") { inSection = line == "[\(wanted)]"; continue }
+            guard inSection, let eq = line.firstIndex(of: "=") else { continue }
+            if line[..<eq].trimmingCharacters(in: .whitespaces) == key {
                 return line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
             }
         }
-        return ""
+        return nil
     }
 
-    static func fetch() async -> StatusSnapshot {
+    static func configuredHost() -> String {
+        configValue(section: "hpc", key: "host") ?? ""
+    }
+
+    static func refreshSeconds() -> Int {
+        WidgetSettings.refreshSeconds(fromMinutes: configValue(section: "widget", key: "refresh_minutes"))
+    }
+
+    static func fetch(refreshSeconds: Int) async -> StatusSnapshot {
         let host = configuredHost()
         guard let hpc = locateHPC() else {
             return failure(host: host, error: "missing",
-                           message: "hpc CLI not found at ~/.local/bin/hpc")
+                           message: "hpc CLI not found at ~/.local/bin/hpc",
+                           refreshSeconds: refreshSeconds)
         }
         let output = await Task.detached { () -> (Data, Int32, String) in
             let process = Process()
@@ -55,15 +64,17 @@ enum StatusRunner {
         }.value
 
         let (data, code, stderr) = output
-        if let decoded = decode(data, fetchedAt: Date()) {
+        if let decoded = decode(data, fetchedAt: Date(), refreshSeconds: refreshSeconds) {
             return decoded
         }
         let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         return failure(host: host, error: "ssh",
-                       message: detail.isEmpty ? "hpc status exited with code \(code)" : String(detail.prefix(500)))
+                       message: detail.isEmpty ? "hpc status exited with code \(code)" : String(detail.prefix(500)),
+                       refreshSeconds: refreshSeconds)
     }
 
-    static func decode(_ data: Data, fetchedAt: Date) -> StatusSnapshot? {
+    static func decode(_ data: Data, fetchedAt: Date,
+                       refreshSeconds: Int = WidgetSettings.defaultRefreshSeconds) -> StatusSnapshot? {
         struct Envelope: Decodable {
             let ok: Bool
             let host: String
@@ -76,12 +87,13 @@ enum StatusRunner {
         return StatusSnapshot(ok: envelope.ok, host: envelope.host,
                               generatedAt: envelope.generated_at, fetchedAt: fetchedAt,
                               error: envelope.error, message: envelope.message,
-                              records: envelope.records ?? [])
+                              records: envelope.records ?? [], refreshSeconds: refreshSeconds)
     }
 
-    static func failure(host: String, error: String, message: String) -> StatusSnapshot {
+    static func failure(host: String, error: String, message: String,
+                        refreshSeconds: Int = WidgetSettings.defaultRefreshSeconds) -> StatusSnapshot {
         StatusSnapshot(ok: false, host: host, generatedAt: "", fetchedAt: Date(),
-                       error: error, message: message)
+                       error: error, message: message, refreshSeconds: refreshSeconds)
     }
 
     static func openLogin() {
@@ -96,16 +108,15 @@ enum StatusRunner {
     }
 }
 
-/// Owns the snapshot, polls every five minutes, and reloads widget timelines.
+/// Owns the snapshot, polls on the configured interval, and reloads widget timelines.
 @MainActor
 final class StatusStore: ObservableObject {
-    static let interval: TimeInterval = 300
-
     @Published private(set) var snapshot: StatusSnapshot?
     @Published private(set) var refreshing = false
     @Published private(set) var launchAtLogin = LoginItem.isEnabled
     @Published private(set) var errorMessage: String?
 
+    private let refreshSeconds = StatusRunner.refreshSeconds()
     private var timer: Timer?
 
     init() {
@@ -114,7 +125,7 @@ final class StatusStore: ObservableObject {
 
     func start() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(refreshSeconds), repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         timer?.tolerance = 30
@@ -124,7 +135,7 @@ final class StatusStore: ObservableObject {
         guard !refreshing else { return }
         refreshing = true
         Task {
-            let fresh = await StatusRunner.fetch()
+            let fresh = await StatusRunner.fetch(refreshSeconds: refreshSeconds)
             do {
                 try SnapshotStore.save(fresh)
                 errorMessage = nil

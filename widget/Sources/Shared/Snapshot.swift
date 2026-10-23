@@ -9,15 +9,66 @@ struct JobRecord: Codable, Equatable, Identifiable {
     let queue: String
     let name: String
     let runTime: String
+    let startTime: String
     let elapsedSeconds: Int?
 
     var id: String { key }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try container.decode(String.self, forKey: .jobId)
+        index = try container.decodeIfPresent(String.self, forKey: .index)
+        key = try container.decode(String.self, forKey: .key)
+        stat = try container.decode(String.self, forKey: .stat)
+        queue = try container.decode(String.self, forKey: .queue)
+        name = try container.decode(String.self, forKey: .name)
+        runTime = try container.decode(String.self, forKey: .runTime)
+        startTime = try container.decodeIfPresent(String.self, forKey: .startTime) ?? ""
+        elapsedSeconds = try container.decodeIfPresent(Int.self, forKey: .elapsedSeconds)
+    }
 
     enum CodingKeys: String, CodingKey {
         case jobId = "job_id"
         case index, key, stat, queue, name
         case runTime = "run_time"
+        case startTime = "start_time"
         case elapsedSeconds = "elapsed_seconds"
+    }
+
+    /// LSF prints start times as `Oct 23 08:54:12 2026` in cluster-local time.
+    var startDate: Date? {
+        guard !startTime.isEmpty else { return nil }
+        return Self.startFormatter.date(from: startTime)
+    }
+
+    /// `since 08:54` for jobs started today, otherwise `since Oct 22 08:54`.
+    var startedLabel: String {
+        guard let date = startDate else { return "not started" }
+        if Calendar.current.isDateInToday(date) {
+            return "since " + date.formatted(date: .omitted, time: .shortened)
+        }
+        return "since " + date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    }
+
+    private static let startFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMM d HH:mm:ss yyyy"
+        return formatter
+    }()
+}
+
+/// Widget settings from `~/.config/dtu-hpc/config.ini` `[widget]`.
+enum WidgetSettings {
+    static let defaultRefreshSeconds = 10 * 60
+
+    /// `refresh_minutes`, clamped to 1–60; missing or invalid values fall back to 10.
+    static func refreshSeconds(fromMinutes text: String?) -> Int {
+        guard let text, let minutes = Int(text.trimmingCharacters(in: .whitespaces)) else {
+            return defaultRefreshSeconds
+        }
+        return min(max(minutes, 1), 60) * 60
     }
 }
 
@@ -47,11 +98,11 @@ struct StatusSnapshot: Codable, Equatable {
     let error: String?
     let message: String?
     let records: [JobRecord]
-
-    static let staleAfter: TimeInterval = 15 * 60
+    let refreshSeconds: Int
 
     init(ok: Bool, host: String, generatedAt: String, fetchedAt: Date,
-         error: String? = nil, message: String? = nil, records: [JobRecord] = []) {
+         error: String? = nil, message: String? = nil, records: [JobRecord] = [],
+         refreshSeconds: Int = WidgetSettings.defaultRefreshSeconds) {
         self.ok = ok
         self.host = host
         self.generatedAt = generatedAt
@@ -59,6 +110,7 @@ struct StatusSnapshot: Codable, Equatable {
         self.error = error
         self.message = message
         self.records = records
+        self.refreshSeconds = refreshSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -70,13 +122,19 @@ struct StatusSnapshot: Codable, Equatable {
         error = try container.decodeIfPresent(String.self, forKey: .error)
         message = try container.decodeIfPresent(String.self, forKey: .message)
         records = try container.decodeIfPresent([JobRecord].self, forKey: .records) ?? []
+        refreshSeconds = try container.decodeIfPresent(Int.self, forKey: .refreshSeconds)
+            ?? WidgetSettings.defaultRefreshSeconds
     }
 
     enum CodingKeys: String, CodingKey {
         case ok, host, error, message, records
         case generatedAt = "generated_at"
         case fetchedAt = "fetched_at"
+        case refreshSeconds = "refresh_seconds"
     }
+
+    /// Two missed polls mean stale.
+    var staleAfter: TimeInterval { 2 * TimeInterval(refreshSeconds) }
 
     var counts: JobCounts {
         var counts = JobCounts()
@@ -113,7 +171,7 @@ struct StatusSnapshot: Codable, Equatable {
     func displayState(now: Date) -> DisplayState {
         if error == "auth" { return .loginRequired }
         if !ok { return .error(message ?? error ?? "status unavailable") }
-        if now.timeIntervalSince(fetchedAt) > Self.staleAfter { return .stale }
+        if now.timeIntervalSince(fetchedAt) > staleAfter { return .stale }
         return .ok
     }
 }
