@@ -13,11 +13,47 @@ struct JobRecord: Codable, Equatable, Identifiable {
 
     var id: String { key }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try container.decode(String.self, forKey: .jobId)
+        index = try container.decodeIfPresent(String.self, forKey: .index)
+        key = try container.decode(String.self, forKey: .key)
+        stat = try container.decode(String.self, forKey: .stat)
+        queue = try container.decode(String.self, forKey: .queue)
+        name = try container.decode(String.self, forKey: .name)
+        runTime = try container.decode(String.self, forKey: .runTime)
+        elapsedSeconds = try container.decodeIfPresent(Int.self, forKey: .elapsedSeconds)
+    }
+
     enum CodingKeys: String, CodingKey {
         case jobId = "job_id"
         case index, key, stat, queue, name
         case runTime = "run_time"
         case elapsedSeconds = "elapsed_seconds"
+    }
+
+    /// `pending` before start, otherwise running time such as `45m`, `4h 4m`, or `2d 3h`.
+    var runningLabel: String {
+        if stat == "PEND" || stat == "PSUSP" { return "pending" }
+        guard let seconds = elapsedSeconds else { return "" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h \(minutes % 60)m" }
+        return "\(hours / 24)d \(hours % 24)h"
+    }
+}
+
+/// Widget settings from `~/.config/dtu-hpc/config.ini` `[widget]`.
+enum WidgetSettings {
+    static let defaultRefreshSeconds = 10 * 60
+
+    /// `refresh_minutes`, clamped to 1–60; missing or invalid values fall back to 10.
+    static func refreshSeconds(fromMinutes text: String?) -> Int {
+        guard let text, let minutes = Int(text.trimmingCharacters(in: .whitespaces)) else {
+            return defaultRefreshSeconds
+        }
+        return min(max(minutes, 1), 60) * 60
     }
 }
 
@@ -47,11 +83,11 @@ struct StatusSnapshot: Codable, Equatable {
     let error: String?
     let message: String?
     let records: [JobRecord]
-
-    static let staleAfter: TimeInterval = 15 * 60
+    let refreshSeconds: Int
 
     init(ok: Bool, host: String, generatedAt: String, fetchedAt: Date,
-         error: String? = nil, message: String? = nil, records: [JobRecord] = []) {
+         error: String? = nil, message: String? = nil, records: [JobRecord] = [],
+         refreshSeconds: Int = WidgetSettings.defaultRefreshSeconds) {
         self.ok = ok
         self.host = host
         self.generatedAt = generatedAt
@@ -59,6 +95,7 @@ struct StatusSnapshot: Codable, Equatable {
         self.error = error
         self.message = message
         self.records = records
+        self.refreshSeconds = refreshSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -70,13 +107,19 @@ struct StatusSnapshot: Codable, Equatable {
         error = try container.decodeIfPresent(String.self, forKey: .error)
         message = try container.decodeIfPresent(String.self, forKey: .message)
         records = try container.decodeIfPresent([JobRecord].self, forKey: .records) ?? []
+        refreshSeconds = try container.decodeIfPresent(Int.self, forKey: .refreshSeconds)
+            ?? WidgetSettings.defaultRefreshSeconds
     }
 
     enum CodingKeys: String, CodingKey {
         case ok, host, error, message, records
         case generatedAt = "generated_at"
         case fetchedAt = "fetched_at"
+        case refreshSeconds = "refresh_seconds"
     }
+
+    /// Two missed polls mean stale.
+    var staleAfter: TimeInterval { 2 * TimeInterval(refreshSeconds) }
 
     var counts: JobCounts {
         var counts = JobCounts()
@@ -113,7 +156,7 @@ struct StatusSnapshot: Codable, Equatable {
     func displayState(now: Date) -> DisplayState {
         if error == "auth" { return .loginRequired }
         if !ok { return .error(message ?? error ?? "status unavailable") }
-        if now.timeIntervalSince(fetchedAt) > Self.staleAfter { return .stale }
+        if now.timeIntervalSince(fetchedAt) > staleAfter { return .stale }
         return .ok
     }
 }

@@ -59,19 +59,10 @@ struct SettingsView: View {
                     .foregroundStyle(counts.failed > 0 ? .red : .secondary)
             }
             .font(.callout)
-            List(snapshot.prioritized()) { job in
-                HStack {
-                    Text(job.stat)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(color(for: job.stat))
-                        .frame(width: 48, alignment: .leading)
-                    Text(job.key).font(.caption.monospaced())
-                    Text(job.name).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Text(job.queue).font(.caption).foregroundStyle(.secondary)
-                }
+            ScrollView {
+                JobTable(jobs: snapshot.prioritized())
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
         }
     }
 
@@ -94,15 +85,6 @@ struct SettingsView: View {
                 Text("Updated \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
             }
-        }
-    }
-
-    private func color(for stat: String) -> Color {
-        switch stat {
-        case "EXIT", "ZOMBI": return .red
-        case "RUN": return .green
-        case "PEND", "PSUSP": return .orange
-        default: return .secondary
         }
     }
 }

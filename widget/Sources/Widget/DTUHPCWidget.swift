@@ -18,7 +18,8 @@ struct StatusProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<StatusEntry>) -> Void) {
         let now = Date()
         let entry = StatusEntry(date: now, snapshot: SnapshotStore.load())
-        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(300))))
+        let refresh = entry.snapshot?.refreshSeconds ?? WidgetSettings.defaultRefreshSeconds
+        completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(TimeInterval(refresh)))))
     }
 }
 
@@ -52,7 +53,7 @@ struct StatusWidgetView: View {
 
     private var jobLimit: Int {
         switch family {
-        case .systemSmall: return 2
+        case .systemSmall: return 3
         case .systemMedium: return 4
         default: return 10
         }
@@ -60,6 +61,7 @@ struct StatusWidgetView: View {
 
     private func jobs(_ snapshot: StatusSnapshot, stale: Bool) -> some View {
         let counts = snapshot.counts
+        let visible = Array(snapshot.prioritized().prefix(jobLimit))
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text("▶ \(counts.running)").foregroundStyle(.green)
@@ -67,13 +69,10 @@ struct StatusWidgetView: View {
                 Text("✖ \(counts.failed)").foregroundStyle(counts.failed > 0 ? .red : .secondary)
             }
             .font(.headline)
-            ForEach(Array(snapshot.prioritized().prefix(jobLimit))) { job in
-                HStack(spacing: 4) {
-                    Text(job.stat).foregroundStyle(color(for: job.stat))
-                    Text(job.name).lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .font(.caption.monospaced())
+            if family == .systemSmall {
+                CompactJobList(jobs: visible)
+            } else {
+                JobTable(jobs: visible)
             }
             Spacer(minLength: 0)
             Text((stale ? "Stale · " : "") + "Updated \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))")
@@ -87,15 +86,6 @@ struct StatusWidgetView: View {
             Text(title).font(.headline).foregroundStyle(color)
             Text(detail).font(.caption).foregroundStyle(.secondary)
             Spacer(minLength: 0)
-        }
-    }
-
-    private func color(for stat: String) -> Color {
-        switch stat {
-        case "EXIT", "ZOMBI": return .red
-        case "RUN": return .green
-        case "PEND", "PSUSP": return .orange
-        default: return .secondary
         }
     }
 }
