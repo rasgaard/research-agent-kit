@@ -165,9 +165,10 @@ def ssh_login_stream(host: str, script: str, args: Optional[list[str]] = None,
 
 
 def ssh_login_batch(host: str, script: str,
-                    args: Optional[list[str]] = None) -> subprocess.CompletedProcess:
+                    args: Optional[list[str]] = None,
+                    timeout: Optional[int] = None) -> subprocess.CompletedProcess:
     """Run a login-shell probe without ever prompting for authentication."""
-    return ssh_batch(host, [login_command(script, args)])
+    return ssh_batch(host, [login_command(script, args)], timeout=timeout)
 
 
 def socket_alive(host: str) -> bool:
@@ -1289,11 +1290,118 @@ def format_status(data: dict, include_hosts: bool) -> str:
     return "\n".join(lines)
 
 
+def bjobs_json_script(fields: str, job_id: Optional[str]) -> str:
+    script = (f'if command -v bjobs >/dev/null 2>&1; then '
+              f'bjobs -o {shlex.quote(fields)} -json')
+    if job_id:
+        script += ' "$1"'
+    script += '; else bstat'
+    if job_id:
+        script += ' "$1"'
+    script += '; fi'
+    return script
+
+
+def parse_elapsed_seconds(value: object) -> Optional[int]:
+    """Parse LSF run_time (HH:MM:SS, D-HH:MM:SS, or raw seconds)."""
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return None
+    if text.isdigit():
+        return int(text)
+    days = 0
+    if "-" in text:
+        day_part, _, text = text.partition("-")
+        if not day_part.isdigit():
+            return None
+        days = int(day_part)
+    parts = text.split(":")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        return None
+    hours, minutes, seconds = (int(part) for part in parts)
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
+def status_record(record: dict) -> dict:
+    job_id = str(record.get("JOBID", "")).strip()
+    index = str(record.get("JOBINDEX", "") or "").strip()
+    run_time = str(record.get("RUN_TIME", "") or "").strip()
+    key = f"{job_id}[{index}]" if index and index != "0" else job_id
+    return {
+        "job_id": job_id,
+        "index": index or None,
+        "key": key,
+        "stat": str(record.get("STAT", "")).strip(),
+        "queue": str(record.get("QUEUE", "")).strip(),
+        "name": str(record.get("JOB_NAME", "")).strip(),
+        "submit_time": str(record.get("SUBMIT_TIME", "")).strip(),
+        "start_time": str(record.get("START_TIME", "")).strip(),
+        "run_time": run_time,
+        "elapsed_seconds": parse_elapsed_seconds(run_time),
+    }
+
+
+def emit_status_json(payload: dict, code: int = 0) -> int:
+    print(json.dumps(payload, sort_keys=True))
+    return code
+
+
+def cmd_status_json(host: str, job_id: Optional[str]) -> int:
+    """Machine-readable status for the menu bar; never prompts for auth."""
+    generated = datetime.now(timezone.utc).isoformat()
+    envelope = {"host": host, "generated_at": generated}
+    if not socket_alive(host):
+        return emit_status_json({
+            **envelope, "ok": False, "error": "auth",
+            "message": f"no live SSH master for {host}; run: hpc login",
+        }, 2)
+    fields = "jobid jobindex stat queue job_name submit_time start_time run_time"
+    try:
+        result = ssh_login_batch(
+            host, bjobs_json_script(fields, job_id),
+            [job_id] if job_id else [], timeout=PROBE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return emit_status_json({
+            **envelope, "ok": False, "error": "timeout",
+            "message": f"bjobs did not answer within {PROBE_TIMEOUT}s",
+        }, 1)
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout).strip() or (
+            f"ssh exited with code {result.returncode}")
+        return emit_status_json({
+            **envelope, "ok": False, "error": "ssh", "message": message[:500],
+        }, 1)
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return emit_status_json({
+            **envelope, "ok": False, "error": "parse",
+            "message": result.stdout[:500].strip(),
+        }, 1)
+    records = data.get("RECORDS", [])
+    errors = [record["ERROR"] for record in records if "ERROR" in record]
+    if errors:
+        return emit_status_json({
+            **envelope, "ok": False, "error": "lsf",
+            "message": "; ".join(str(error) for error in errors),
+        }, 1)
+    return emit_status_json({
+        **envelope, "ok": True,
+        "records": [status_record(record) for record in records],
+    })
+
+
 def cmd_status(host: str, args: argparse.Namespace) -> int:
     if args.detail and not args.job_id:
         die("--detail requires a job id")
     if args.detail and args.hosts:
         die("--hosts cannot be combined with --detail")
+    if args.json:
+        if args.detail:
+            die("--json cannot be combined with --detail")
+        if args.hosts:
+            die("--json cannot be combined with --hosts")
+        return cmd_status_json(host, args.job_id)
     ensure(host)
     if args.detail:
         script = ('if command -v bstat >/dev/null 2>&1; then bstat "$1"; '
@@ -1306,14 +1414,7 @@ def cmd_status(host: str, args: argparse.Namespace) -> int:
     fields = "jobid jobindex stat queue job_name submit_time start_time run_time"
     if args.hosts:
         fields += " exec_host from_host"
-    script = (f'if command -v bjobs >/dev/null 2>&1; then '
-              f'bjobs -o {shlex.quote(fields)} -json')
-    if args.job_id:
-        script += ' "$1"'
-    script += '; else bstat'
-    if args.job_id:
-        script += ' "$1"'
-    script += '; fi'
+    script = bjobs_json_script(fields, args.job_id)
     result = ssh_login(host, script, [args.job_id] if args.job_id else [], check=False)
     try:
         data = json.loads(result.stdout)
@@ -1345,8 +1446,8 @@ def log_file_names(names: list[str], job_id: str, index: Optional[int]) -> list[
 
 def cmd_logs(host: str, args: argparse.Namespace) -> int:
     ensure(host)
-    root = repo_root()
-    entry = find_job(root, args.job_id)
+    root = optional_repo_root()
+    entry = find_job(root, args.job_id) if root else None
     if not entry:
         if args.follow or args.index is not None:
             die(f"job {args.job_id} not in the local ledger; cannot locate its logs")
@@ -1533,7 +1634,7 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--queue", default=None, help="override the script's #BSUB -q")
     submit.add_argument("--allow-dirty", action="store_true")
     submit.add_argument("--allow-uncapped", action="store_true",
-                        help="allow an array without a %K concurrency cap")
+                        help="allow an array without a %%K concurrency cap")
     submit.add_argument("--dry-run", action="store_true")
     submit.set_defaults(func=cmd_submit)
 
@@ -1543,6 +1644,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="include EXEC_HOST and FROM_HOST")
     status.add_argument("--detail", action="store_true",
                         help="use bstat for one job (pending reasons, array history)")
+    status.add_argument("--json", action="store_true",
+                        help="machine-readable status; never prompts for auth")
     status.set_defaults(func=cmd_status)
 
     logs = sub.add_parser("logs", help="bpeek or tail the job logs")

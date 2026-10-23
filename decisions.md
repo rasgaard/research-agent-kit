@@ -125,3 +125,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: per-lock venvs (hardlinks made same-lock copies cheap, but retention/disk complexity; rejected); queued CPU build (queue wait blocks onboarding; rejected); force the login Python with `--python` (breaks >=3.12; rejected); auto-sync during submit (races and hides changes; rejected); adopt manifest-less venvs (cannot prove identity; deferred).
 - Refs: #50, #67; PR #68.
 - Tags: hpc, sync-env, venv, manifest, python, reproducibility, workflow.
+
+## 2026-10-23 — Desktop widget: native WidgetKit, app writes a snapshot
+
+- Context: #71 wants an at-a-glance DTU HPC job view without SwiftBar, Übersicht, or other runtimes; the sandboxed widget cannot run SSH.
+- Decision: a menu-less `LSUIElement` host app polls `hpc status --json` every 5 min and atomically writes `~/.local/state/dtu-hpc/widget.json`; the WidgetKit extension only reads that file via a read-only home-relative exception. `widget/project.yml` (XcodeGen) is the source of truth and the generated `.xcodeproj` is committed so Xcode alone builds it. Launch at login uses `SMAppService.mainApp`, which cannot pass `--background`, so the login launch shows the window.
+- Alternatives: SwiftBar/Übersicht (third-party runtime; rejected); widget running SSH itself (sandbox cannot use the ControlMaster socket; rejected); LaunchAgent plist for `--background` (extra plumbing against the stated SMAppService requirement; deferred, revisit if the login window annoys).
+- Refs: #71.
+- Tags: widget, hpc, swift, workflow, auth.

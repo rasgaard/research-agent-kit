@@ -1,0 +1,545 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		209D9BF915DF2C32E0675431 /* StatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C46542B29563AFC9CB2B0E /* StatusStore.swift */; };
+		445C1B3887AACFF7F655028C /* SnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A401A1723E18C7B8A224CECA /* SnapshotTests.swift */; };
+		54799B656A38466D58A6B02E /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596AA010F38503F903F80CB3 /* Snapshot.swift */; };
+		A073CA847D81E47E23223145 /* DTUHPCWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 15E989B2A9D608C47ECA5DAE /* DTUHPCWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		E3D1BC18BF2A28945D122D5F /* DTUHPCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9F021F6E459E7F28C28927 /* DTUHPCApp.swift */; };
+		E807972C24EE931568A63D1D /* DTUHPCWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC22712404A7FAFD3B76AE97 /* DTUHPCWidget.swift */; };
+		ECA99B49DCA3248DAA1EE974 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0DF093DD8BDB94CCB1DEC8 /* SettingsView.swift */; };
+		EE8D46BBC516DFD710F26EFE /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596AA010F38503F903F80CB3 /* Snapshot.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		9E8F499F39F88B36B386BD19 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7255B476C87C61BFB6E8D060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8A8804DF7BCA9390F9738415;
+			remoteInfo = DTUHPC;
+		};
+		F8BE2BA9B07CC33CD65E85AE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7255B476C87C61BFB6E8D060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 725F90F3E27A5DCC1E659C01;
+			remoteInfo = DTUHPCWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5807A2102EF083227FAF771E /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A073CA847D81E47E23223145 /* DTUHPCWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		02D59E72490C2F11F3E7E182 /* DTUHPCTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DTUHPCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		15E989B2A9D608C47ECA5DAE /* DTUHPCWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DTUHPCWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		29C46542B29563AFC9CB2B0E /* StatusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusStore.swift; sourceTree = "<group>"; };
+		2F9F021F6E459E7F28C28927 /* DTUHPCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DTUHPCApp.swift; sourceTree = "<group>"; };
+		356730F7997F9CFAA61B09E3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		596AA010F38503F903F80CB3 /* Snapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
+		7F0DF093DD8BDB94CCB1DEC8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A401A1723E18C7B8A224CECA /* SnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotTests.swift; sourceTree = "<group>"; };
+		C20C72CCAFD63B4183DD83AF /* DTUHPC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DTUHPC.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C707076B59B00FCDA7FBD08F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CB34EF2943BFDBEEE6F66403 /* DTUHPCWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DTUHPCWidget.entitlements; sourceTree = "<group>"; };
+		EC22712404A7FAFD3B76AE97 /* DTUHPCWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DTUHPCWidget.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		208B3D296C7020167C3AC5D6 /* Widget */ = {
+			isa = PBXGroup;
+			children = (
+				CB34EF2943BFDBEEE6F66403 /* DTUHPCWidget.entitlements */,
+				EC22712404A7FAFD3B76AE97 /* DTUHPCWidget.swift */,
+				C707076B59B00FCDA7FBD08F /* Info.plist */,
+			);
+			name = Widget;
+			path = Sources/Widget;
+			sourceTree = "<group>";
+		};
+		3BF7E6B5A35808350577FCD6 = {
+			isa = PBXGroup;
+			children = (
+				C0B3082C3FA75E6DDA672E5A /* App */,
+				7FA1A0E7640B5A71CA3E8817 /* Shared */,
+				4B9751FEA5E56BD2B5F54CEF /* Tests */,
+				208B3D296C7020167C3AC5D6 /* Widget */,
+				D6689D5C351359863A8C6A85 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4B9751FEA5E56BD2B5F54CEF /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				A401A1723E18C7B8A224CECA /* SnapshotTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		7FA1A0E7640B5A71CA3E8817 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				596AA010F38503F903F80CB3 /* Snapshot.swift */,
+			);
+			name = Shared;
+			path = Sources/Shared;
+			sourceTree = "<group>";
+		};
+		C0B3082C3FA75E6DDA672E5A /* App */ = {
+			isa = PBXGroup;
+			children = (
+				2F9F021F6E459E7F28C28927 /* DTUHPCApp.swift */,
+				356730F7997F9CFAA61B09E3 /* Info.plist */,
+				7F0DF093DD8BDB94CCB1DEC8 /* SettingsView.swift */,
+				29C46542B29563AFC9CB2B0E /* StatusStore.swift */,
+			);
+			name = App;
+			path = Sources/App;
+			sourceTree = "<group>";
+		};
+		D6689D5C351359863A8C6A85 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C20C72CCAFD63B4183DD83AF /* DTUHPC.app */,
+				02D59E72490C2F11F3E7E182 /* DTUHPCTests.xctest */,
+				15E989B2A9D608C47ECA5DAE /* DTUHPCWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		725F90F3E27A5DCC1E659C01 /* DTUHPCWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4AC00640EB5BDC178C009546 /* Build configuration list for PBXNativeTarget "DTUHPCWidget" */;
+			buildPhases = (
+				B2B93E579C9E539123656CA0 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DTUHPCWidget;
+			packageProductDependencies = (
+			);
+			productName = DTUHPCWidget;
+			productReference = 15E989B2A9D608C47ECA5DAE /* DTUHPCWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		8A8804DF7BCA9390F9738415 /* DTUHPC */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4BBD3A992A76DFCCBAD258D8 /* Build configuration list for PBXNativeTarget "DTUHPC" */;
+			buildPhases = (
+				F80E43672197CA61A01B845A /* Sources */,
+				5807A2102EF083227FAF771E /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7622148BA45B9BB2D8AD12D9 /* PBXTargetDependency */,
+			);
+			name = DTUHPC;
+			packageProductDependencies = (
+			);
+			productName = DTUHPC;
+			productReference = C20C72CCAFD63B4183DD83AF /* DTUHPC.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A6EB93BE9685EEDCC1138547 /* DTUHPCTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B932E8A9494ACE57387B6458 /* Build configuration list for PBXNativeTarget "DTUHPCTests" */;
+			buildPhases = (
+				B7120FAF5D9B52C6A9B54E80 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AD4C0A7C27A1E6205B6E4E3A /* PBXTargetDependency */,
+			);
+			name = DTUHPCTests;
+			packageProductDependencies = (
+			);
+			productName = DTUHPCTests;
+			productReference = 02D59E72490C2F11F3E7E182 /* DTUHPCTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7255B476C87C61BFB6E8D060 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					725F90F3E27A5DCC1E659C01 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					8A8804DF7BCA9390F9738415 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					A6EB93BE9685EEDCC1138547 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = FF665DA60D84811E7F4F54B4 /* Build configuration list for PBXProject "DTUHPCStatus" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 3BF7E6B5A35808350577FCD6;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D6689D5C351359863A8C6A85 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8A8804DF7BCA9390F9738415 /* DTUHPC */,
+				725F90F3E27A5DCC1E659C01 /* DTUHPCWidget */,
+				A6EB93BE9685EEDCC1138547 /* DTUHPCTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B2B93E579C9E539123656CA0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E807972C24EE931568A63D1D /* DTUHPCWidget.swift in Sources */,
+				EE8D46BBC516DFD710F26EFE /* Snapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B7120FAF5D9B52C6A9B54E80 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				445C1B3887AACFF7F655028C /* SnapshotTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F80E43672197CA61A01B845A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E3D1BC18BF2A28945D122D5F /* DTUHPCApp.swift in Sources */,
+				ECA99B49DCA3248DAA1EE974 /* SettingsView.swift in Sources */,
+				54799B656A38466D58A6B02E /* Snapshot.swift in Sources */,
+				209D9BF915DF2C32E0675431 /* StatusStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7622148BA45B9BB2D8AD12D9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 725F90F3E27A5DCC1E659C01 /* DTUHPCWidget */;
+			targetProxy = F8BE2BA9B07CC33CD65E85AE /* PBXContainerItemProxy */;
+		};
+		AD4C0A7C27A1E6205B6E4E3A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8A8804DF7BCA9390F9738415 /* DTUHPC */;
+			targetProxy = 9E8F499F39F88B36B386BD19 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		3065B7001BAD0889EC350A8C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Sources/Widget/DTUHPCWidget.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/Widget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rasgaard.dtuhpc.widget;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		37975752967B61B219C332DE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rasgaard.dtuhpc.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DTUHPC.app/Contents/MacOS/DTUHPC";
+			};
+			name = Debug;
+		};
+		64C04B5960EE1FD43C9B8957 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Sources/Widget/DTUHPCWidget.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/Widget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rasgaard.dtuhpc.widget;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		9496D4207347C1E88D509794 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rasgaard.dtuhpc.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DTUHPC.app/Contents/MacOS/DTUHPC";
+			};
+			name = Release;
+		};
+		9669908795B19791A4F27119 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rasgaard.dtuhpc;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		B067B8567EF8C9531FF05413 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		CCEFC2892D612877ED5240F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D37DADB1BCAD5D63C40F0CAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rasgaard.dtuhpc;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4AC00640EB5BDC178C009546 /* Build configuration list for PBXNativeTarget "DTUHPCWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64C04B5960EE1FD43C9B8957 /* Debug */,
+				3065B7001BAD0889EC350A8C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4BBD3A992A76DFCCBAD258D8 /* Build configuration list for PBXNativeTarget "DTUHPC" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D37DADB1BCAD5D63C40F0CAD /* Debug */,
+				9669908795B19791A4F27119 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B932E8A9494ACE57387B6458 /* Build configuration list for PBXNativeTarget "DTUHPCTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				37975752967B61B219C332DE /* Debug */,
+				9496D4207347C1E88D509794 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FF665DA60D84811E7F4F54B4 /* Build configuration list for PBXProject "DTUHPCStatus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CCEFC2892D612877ED5240F9 /* Debug */,
+				B067B8567EF8C9531FF05413 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 7255B476C87C61BFB6E8D060 /* Project object */;
+}
