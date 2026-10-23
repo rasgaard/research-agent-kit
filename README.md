@@ -79,6 +79,25 @@ Set a user-wide secret without putting it in argv or the repo (prompts, or pipe 
 
 See `skills/dtu-hpc/` for the full procedure and guardrails.
 
+### Desktop widget (optional, macOS 14+)
+
+`widget/` is a native WidgetKit desktop widget showing running, pending, and failed jobs. It has no third-party runtime. The host app runs `hpc status --json` every 5 minutes and writes `~/.local/state/dtu-hpc/widget.json`; the sandboxed widget only reads that file and never runs SSH.
+
+Build and install (Xcode 27, ad-hoc signing, no packages):
+
+```bash
+cd widget
+xcodegen generate                      # only needed after editing project.yml
+xcodebuild -project DTUHPCStatus.xcodeproj -scheme DTUHPC -configuration Release build
+cp -R "$(xcodebuild -project DTUHPCStatus.xcodeproj -scheme DTUHPC -configuration Release -showBuildSettings | awk -F' = ' '/ TARGET_BUILD_DIR /{print $2}')/DTUHPC.app" /Applications/
+open /Applications/DTUHPC.app          # then right-click the desktop → Edit Widgets → DTU HPC Jobs
+```
+
+- **Auth boundary:** the widget and app never prompt for SSH. When the master is dead the snapshot says `login required`; click **Login to HPC** (opens Terminal running `hpc login`) to re-authenticate.
+- **Stale:** a snapshot older than 15 minutes is shown as stale; a failed poll is shown as an explicit error.
+- **Tests:** `xcodebuild -project widget/DTUHPCStatus.xcodeproj -scheme DTUHPC test`.
+- **Launch at login** uses `SMAppService`, which cannot pass `--background`, so the login launch also opens the window; close it and the app keeps polling. Install in `/Applications` so the login item resolves reliably.
+
 ## Experiment tracking
 
 The trackio command above installs trackio's own official agent skill (logging, retrieval, storage schema, alerts) globally — loaded on demand, so it stays out of context until experiment tracking comes up. It also adds a `/logbook` command (`--no-command` skips it). For a per-project copy instead — travels with the repo, lands under `.agents/skills/trackio/` — rerun without `--global`. The kit deliberately does not duplicate upstream docs; the workflow rules that matter are already contract text (`AGENTS.md` §2 progress lines, §1.8 `experiments.jsonl`, dependency approval).
