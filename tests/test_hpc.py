@@ -127,7 +127,8 @@ class HpcCliTest(unittest.TestCase):
             entry["submitted_at"] = submitted_at
         path.write_text(json.dumps(entry) + "\n")
 
-    def hpc(self, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    def hpc(self, *args: str, extra_env: dict[str, str] | None = None,
+            cwd: Path | None = None) -> subprocess.CompletedProcess:
         env = os.environ.copy()
         env.update({
             "HPC_CONFIG": str(self.config),
@@ -139,7 +140,7 @@ class HpcCliTest(unittest.TestCase):
             "PATH": f"{self.stub_bin}{os.pathsep}{env['PATH']}",
         })
         env.update(extra_env or {})
-        return subprocess.run([sys.executable, str(HPC), *args], cwd=self.repo,
+        return subprocess.run([sys.executable, str(HPC), *args], cwd=cwd or self.repo,
                               env=env, text=True, capture_output=True)
 
     def test_dirty_tree_is_refused(self) -> None:
@@ -337,6 +338,34 @@ class HpcCliTest(unittest.TestCase):
         self.assertIn("Job <999> is not found", result.stderr)
         self.assertNotIn("JOBID", result.stdout)
 
+    def test_status_json_emits_machine_readable_records(self) -> None:
+        bjobs = self.status_jobs()
+        result = self.hpc("status", "--json",
+                          extra_env={"HPC_TEST_BJOBS": str(bjobs)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["host"], "test")
+        self.assertIn("generated_at", payload)
+        self.assertEqual(payload["records"][0]["key"], "123[4]")
+        self.assertEqual(payload["records"][0]["elapsed_seconds"], 600)
+        self.assertEqual(payload["records"][1]["stat"], "PEND")
+
+    def test_status_json_never_prompts_without_master(self) -> None:
+        result = self.hpc("status", "--json", extra_env={"HPC_TEST_DEAD": "1"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"], "auth")
+        self.assertNotIn("bjobs", self.log.read_text())
+        self.assertNotIn("Terminal", result.stderr)
+
+    def test_status_json_rejects_detail(self) -> None:
+        result = self.hpc("status", "123", "--json", "--detail")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--json cannot be combined with --detail", result.stderr)
+
+
     def test_pull_skips_code_by_default(self) -> None:
         self.add_ledger()
         result = self.hpc("pull", "123")
@@ -393,6 +422,11 @@ class HpcCliTest(unittest.TestCase):
 
     def test_logs_without_ledger_uses_visible_bpeek(self) -> None:
         result = self.hpc("logs", "123")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STUB-BPEEK-OUTPUT", result.stdout)
+
+    def test_logs_outside_repo_uses_visible_bpeek(self) -> None:
+        result = self.hpc("logs", "123", cwd=Path(self.tmp.name))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("STUB-BPEEK-OUTPUT", result.stdout)
 
