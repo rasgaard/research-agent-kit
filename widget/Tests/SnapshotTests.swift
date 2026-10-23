@@ -78,29 +78,30 @@ final class SnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.staleAfter, 600)
     }
 
-    func testRunningJobParsesStartTimeAndPendingSaysNotStarted() throws {
+    func testRunningJobShowsRunningTimeAndPendingSaysPending() throws {
         let snapshot = try XCTUnwrap(StatusRunner.decode(Data(cliJSON.utf8), fetchedAt: fetched))
-        let running = snapshot.records[0]
-        XCTAssertNotNil(running.startDate)
-        XCTAssertTrue(running.startedLabel.hasPrefix("since "))
-        XCTAssertEqual(snapshot.records[1].startedLabel, "not started")
+        XCTAssertEqual(snapshot.records[0].runningLabel, "10m")
+        XCTAssertEqual(snapshot.records[1].runningLabel, "pending")
+        XCTAssertEqual(snapshot.records[1].queue, "p1")
     }
 
-    func testStartTimeParsesLSFFormatInLocalTime() throws {
-        let job = try JSONDecoder().decode(JobRecord.self, from: Data("""
-        {"job_id": "1", "key": "1", "stat": "RUN", "queue": "p1", "name": "x",
-         "run_time": "00:01:00", "start_time": "Oct 3 08:54:12 2026"}
-        """.utf8))
-        let date = try XCTUnwrap(job.startDate)
-        let parts = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: date)
-        XCTAssertEqual([parts.month, parts.day, parts.hour, parts.minute], [10, 3, 8, 54])
+    func testRunningTimeFormatsHoursAndDays() throws {
+        func job(_ seconds: Int) throws -> JobRecord {
+            try JSONDecoder().decode(JobRecord.self, from: Data("""
+            {"job_id": "1", "key": "1", "stat": "RUN", "queue": "p1", "name": "x",
+             "run_time": "", "elapsed_seconds": \(seconds)}
+            """.utf8))
+        }
+        XCTAssertEqual(try job(45).runningLabel, "0m")
+        XCTAssertEqual(try job(14652).runningLabel, "4h 4m")
+        XCTAssertEqual(try job(90_000).runningLabel, "1d 1h")
     }
 
-    func testRecordWithoutStartTimeStillDecodes() throws {
+    func testRecordWithoutElapsedStillDecodes() throws {
         let job = try JSONDecoder().decode(JobRecord.self, from: Data("""
-        {"job_id": "1", "key": "1", "stat": "PEND", "queue": "p1", "name": "x", "run_time": ""}
+        {"job_id": "1", "key": "1", "stat": "RUN", "queue": "p1", "name": "x", "run_time": ""}
         """.utf8))
-        XCTAssertNil(job.startDate)
+        XCTAssertEqual(job.runningLabel, "")
     }
 
     func testAuthErrorRequiresLoginAndDecodesWithoutRecords() throws {

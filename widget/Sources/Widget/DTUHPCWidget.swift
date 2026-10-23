@@ -74,8 +74,9 @@ struct StatusWidgetView: View {
                     Text(job.name).lineLimit(1)
                     Spacer(minLength: 0)
                     if family != .systemSmall {
-                        Text(job.startedLabel).foregroundStyle(.secondary)
+                        Text(job.runningLabel).foregroundStyle(.secondary)
                     }
+                    Text(job.queue).foregroundStyle(.secondary)
                 }
                 .font(.caption.monospaced())
             }

@@ -9,7 +9,6 @@ struct JobRecord: Codable, Equatable, Identifiable {
     let queue: String
     let name: String
     let runTime: String
-    let startTime: String
     let elapsedSeconds: Int?
 
     var id: String { key }
@@ -23,7 +22,6 @@ struct JobRecord: Codable, Equatable, Identifiable {
         queue = try container.decode(String.self, forKey: .queue)
         name = try container.decode(String.self, forKey: .name)
         runTime = try container.decode(String.self, forKey: .runTime)
-        startTime = try container.decodeIfPresent(String.self, forKey: .startTime) ?? ""
         elapsedSeconds = try container.decodeIfPresent(Int.self, forKey: .elapsedSeconds)
     }
 
@@ -31,32 +29,19 @@ struct JobRecord: Codable, Equatable, Identifiable {
         case jobId = "job_id"
         case index, key, stat, queue, name
         case runTime = "run_time"
-        case startTime = "start_time"
         case elapsedSeconds = "elapsed_seconds"
     }
 
-    /// LSF prints start times as `Oct 23 08:54:12 2026` in cluster-local time.
-    var startDate: Date? {
-        guard !startTime.isEmpty else { return nil }
-        return Self.startFormatter.date(from: startTime)
+    /// `pending` before start, otherwise running time such as `45m`, `4h 4m`, or `2d 3h`.
+    var runningLabel: String {
+        if stat == "PEND" || stat == "PSUSP" { return "pending" }
+        guard let seconds = elapsedSeconds else { return "" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h \(minutes % 60)m" }
+        return "\(hours / 24)d \(hours % 24)h"
     }
-
-    /// `since 08:54` for jobs started today, otherwise `since Oct 22 08:54`.
-    var startedLabel: String {
-        guard let date = startDate else { return "not started" }
-        if Calendar.current.isDateInToday(date) {
-            return "since " + date.formatted(date: .omitted, time: .shortened)
-        }
-        return "since " + date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
-    }
-
-    private static let startFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "MMM d HH:mm:ss yyyy"
-        return formatter
-    }()
 }
 
 /// Widget settings from `~/.config/dtu-hpc/config.ini` `[widget]`.
