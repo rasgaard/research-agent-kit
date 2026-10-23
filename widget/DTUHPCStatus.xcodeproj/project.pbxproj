@@ -12,6 +12,8 @@
 		54799B656A38466D58A6B02E /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596AA010F38503F903F80CB3 /* Snapshot.swift */; };
 		A073CA847D81E47E23223145 /* DTUHPCWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 15E989B2A9D608C47ECA5DAE /* DTUHPCWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		E3D1BC18BF2A28945D122D5F /* DTUHPCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9F021F6E459E7F28C28927 /* DTUHPCApp.swift */; };
+		E54F999E7661E9BB09CF5020 /* JobList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DB511D1886D6163E6AF64E /* JobList.swift */; };
+		E69D6B25B6435E940F0F91D7 /* JobList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DB511D1886D6163E6AF64E /* JobList.swift */; };
 		E807972C24EE931568A63D1D /* DTUHPCWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC22712404A7FAFD3B76AE97 /* DTUHPCWidget.swift */; };
 		ECA99B49DCA3248DAA1EE974 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0DF093DD8BDB94CCB1DEC8 /* SettingsView.swift */; };
 		EE8D46BBC516DFD710F26EFE /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596AA010F38503F903F80CB3 /* Snapshot.swift */; };
@@ -56,6 +58,7 @@
 		356730F7997F9CFAA61B09E3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		596AA010F38503F903F80CB3 /* Snapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
 		7F0DF093DD8BDB94CCB1DEC8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A1DB511D1886D6163E6AF64E /* JobList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobList.swift; sourceTree = "<group>"; };
 		A401A1723E18C7B8A224CECA /* SnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotTests.swift; sourceTree = "<group>"; };
 		C20C72CCAFD63B4183DD83AF /* DTUHPC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DTUHPC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C707076B59B00FCDA7FBD08F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -97,6 +100,7 @@
 		7FA1A0E7640B5A71CA3E8817 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				A1DB511D1886D6163E6AF64E /* JobList.swift */,
 				596AA010F38503F903F80CB3 /* Snapshot.swift */,
 			);
 			name = Shared;
@@ -232,6 +236,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E807972C24EE931568A63D1D /* DTUHPCWidget.swift in Sources */,
+				E54F999E7661E9BB09CF5020 /* JobList.swift in Sources */,
 				EE8D46BBC516DFD710F26EFE /* Snapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -249,6 +254,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E3D1BC18BF2A28945D122D5F /* DTUHPCApp.swift in Sources */,
+				E69D6B25B6435E940F0F91D7 /* JobList.swift in Sources */,
 				ECA99B49DCA3248DAA1EE974 /* SettingsView.swift in Sources */,
 				54799B656A38466D58A6B02E /* Snapshot.swift in Sources */,
 				209D9BF915DF2C32E0675431 /* StatusStore.swift in Sources */,
