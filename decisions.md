@@ -125,3 +125,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: per-lock venvs (hardlinks made same-lock copies cheap, but retention/disk complexity; rejected); queued CPU build (queue wait blocks onboarding; rejected); force the login Python with `--python` (breaks >=3.12; rejected); auto-sync during submit (races and hides changes; rejected); adopt manifest-less venvs (cannot prove identity; deferred).
 - Refs: #50, #67; PR #68.
 - Tags: hpc, sync-env, venv, manifest, python, reproducibility, workflow.
+
+## 2026-10-23 — Add a read-only SwiftBar menu bar for HPC jobs
+
+- Context: checking DTU jobs meant logging in and running `watch bstat`; `hpc status` already parsed `bjobs -json`, but there was no glanceable global view.
+- Decision: add non-prompting `hpc status --json` plus a SwiftBar plugin that caches results, polls 30 s while active, backs off to 5 min when idle, goes dormant (no SSH) after 30 min without jobs, and wakes on `hpc submit`/Refresh. Menu actions stay read-only (detail, `bpeek` logs, copy id); `hpc watch --notify` remains the only notifier.
+- Alternatives: native `MenuBarExtra` app (more work and signing); Raycast (not glanceable); ledger-only scope (misses raw `bsub` jobs); calling `hpc status` directly from the poller (can pop Terminal); always-on polling (holds the SSH master warm forever).
+- Refs: #69.
+- Tags: hpc, swiftbar, menubar, status, ux, auth.

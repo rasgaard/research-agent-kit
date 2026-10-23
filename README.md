@@ -15,6 +15,7 @@ skills/dtu-hpc/              # optional: DTU LSF workflow (local-first, SHA-pinn
   SKILL.md                   # commands, guardrails, re-auth protocol
   references/                # auth, sync, queues, monitoring — verified DTU docs
 bin/hpc                      # stdlib CLI: init/login/ensure/doctor/sync-env/stage/shell/gpu/submit/status/logs/pull/secret/watch/events
+swiftbar/                    # optional read-only SwiftBar menu bar for `hpc status --json`
 examples/hf-smoke/           # uv + torch + transformers + datasets p1 job (verified)
 templates/                   # LSF job + smoke templates, ssh_config, config.ini
 tests/test_hpc.py            # stubbed CLI tests (no network)
@@ -78,6 +79,24 @@ hpc pull <job-id>
 Set a user-wide secret without putting it in argv or the repo (prompts, or pipe via stdin; written atomically, mode 600, on the cluster): `hpc secret set OPENROUTER_API_KEY`. Use `hpc secret set --project WANDB_API_KEY` for a key scoped to this repo's origin; project values override user-wide ones.
 
 See `skills/dtu-hpc/` for the full procedure and guardrails.
+
+### Menu bar (SwiftBar)
+
+`swiftbar/` contains a read-only, global job view for the macOS menu bar:
+
+```bash
+brew install --cask swiftbar
+mkdir -p "$HOME/Library/Application Support/SwiftBar"
+ln -sfn "$(pwd)/swiftbar/hpc.30s.sh" "$HOME/Library/Application Support/SwiftBar/hpc.30s.sh"
+defaults write com.ameba.SwiftBar PluginDirectory -string "$HOME/Library/Application Support/SwiftBar"
+open -a SwiftBar
+```
+
+- Polls `hpc status --json` (one `bjobs` call, never prompts) every 30 s while jobs are active, backs off to 5 min when idle, and stops SSH after 30 min with no jobs. `hpc submit` and the menu's **Refresh now** wake it.
+- An expired SSH master shows **HPC login**; choose **Login** to authenticate in Terminal.
+- Read-only actions: **Details** (`hpc status <id> --detail`), **Open logs** (`bpeek -f`), **Copy job id**. No kill or pull.
+- Thresholds: `~/.config/dtu-hpc/menubar.ini`; cache and wake state: `~/.local/state/dtu-hpc/`.
+- `hpc watch --notify` remains the only notifier. Requires SwiftBar plus Python 3 (Homebrew Python is preferred, then the system interpreter).
 
 ## Experiment tracking
 

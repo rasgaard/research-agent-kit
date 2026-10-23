@@ -36,7 +36,7 @@ hpc stage                # optional interactive smoke
 2b. **Interactive check (optional).** `hpc stage` → `hpc shell` (CPU `linuxsh`) or `hpc gpu a100`; `cd .../interactive/current` and run the script. Shared nodes: short tests only.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths. Dry-run ships nothing and therefore allows a dirty tree; it still renders `HEAD`.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.
-5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (compact table; add `--detail` for `bstat` pending reasons and array history). `bpeek` shows output of running jobs. For hands-off monitoring, run `hpc watch --notify` in the foreground or background (see `references/monitoring.md`), and read `hpc events --unread` before assuming a job is still healthy.
+5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (compact table; add `--detail` for `bstat` pending reasons and array history). `bpeek` shows output of running jobs. For hands-off monitoring, run `hpc watch --notify` in the foreground or background (see `references/monitoring.md`), and read `hpc events --unread` before assuming a job is still healthy. For an at-a-glance view, install the optional read-only SwiftBar plugin (`swiftbar/`; see `README.md`).
 6. **Pull.** `hpc pull <id>` → `runs/<run_id>/`. Commit small metrics; upload large artefacts to a private HF repo.
 
 ## Commands
@@ -54,7 +54,7 @@ hpc shell                  # linuxsh shared CPU node, in tmux
 hpc gpu a100|v100|sxm2     # shared GPU node, in tmux (short tests only)
 hpc gpu p1                 # p1gpush (2 shared H100s)
 hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty] [--allow-uncapped]
-hpc status [id] [--hosts] [--detail]  # compact table; --hosts adds exec/from; --detail uses bstat
+hpc status [id] [--hosts] [--detail] [--json]  # compact table; --json never prompts
 hpc logs <id> [-f] [--index N]  # tail per-element logs for arrays
 hpc pull <id> [--dest D] [--include-code]  # rsync; code/ is skipped by default
 hpc watch [--once] [--notify]  # poll ledger jobs and write events (60 s loop)
