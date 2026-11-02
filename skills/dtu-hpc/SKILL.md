@@ -33,7 +33,13 @@ hpc stage                # optional interactive smoke
     that only calls an external API (judge/student) and does CPU work belongs on
     the `hpc` CPU queue, not `p1`/`gpua100`.
 2. **Commit.** The CLI ships `HEAD`; a dirty tree is refused. WIP commits on a feature branch are fine.
-2b. **Interactive check (optional).** `hpc stage` → `hpc shell` (CPU `linuxsh`) or `hpc gpu a100`; `cd .../interactive/current` and run the script. Shared nodes: short tests only.
+2b. **Interactive check — required before the first batch run of any code path.**
+    `hpc stage` → `hpc gpu p1` (or `hpc shell` for CPU-only work); `cd
+    .../interactive/current` and run the *real* entry point on a tiny slice. Local
+    tests answer "does it import"; only the cluster answers "does it authenticate,
+    decode audio, download weights, interleave datasets, write to `/work3`". Those
+    failures take seconds on a shared node and a queue cycle in batch — one project
+    lost a night to three of them in a row. Shared nodes: short tests only.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths. Dry-run ships nothing and therefore allows a dirty tree; it still renders `HEAD`.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.
 5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (compact table; add `--detail` for `bstat` pending reasons and array history). `bpeek` shows output of running jobs. For hands-off monitoring, run `hpc watch --notify` in the foreground or background (see `references/monitoring.md`), and read `hpc events --unread` before assuming a job is still healthy.
@@ -65,6 +71,16 @@ hpc events [--unread] [--json] # agent-facing event feed
 
 - **Stay on one queue.** Default GPU batch queue is `p1`. Do not rotate queues because a snapshot shows fewer “jobs ahead”: `bstat`/`classstat`/`showstart` estimates are noisy, and killing a pending job loses its position. Switch only for (a) explicit user instruction or (b) a hard resource mismatch (GPU model/memory, walltime, access/quota) that `p1` cannot satisfy. State the reason once in the issue/PR and make one deliberate switch — never a shuffle loop.
 - Start from `templates/job.lsf` / `templates/smoke.lsf`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}`, `{{PROJECT_SECRETS}}` are rendered by the CLI.
+- **`rusage[mem]` is charged per slot**, not per job: `-n 8` with
+  `rusage[mem=48GB]` reserves **384 GB** of host memory and will queue for hours
+  behind jobs that fit. Divide the total you want by the slot count. `hpc submit`
+  now prints the product before submitting; read that line.
+- **`-M` may exceed the per-slot `rusage[mem]` by at most 1 GB** or the site esub
+  aborts with "The memory limit must not exceed the usage by more than 1GB".
+- **Copy the bulk of the script, not just the BSUB block**, from the template: it
+  sets `TMPDIR` inside the run dir (never the shared `/tmp`) and sources secrets
+  under `set -a`, without which a bare `NAME=value` secrets file stays invisible to
+  python even though `${NAME}` looks set.
 - GPU queues: `gpua100`, `gpul40s`, `gpuv100`, `gpua10`, `gpua40`, plus `p1` (Hopper, project shares, max 1 node/job); request with `#BSUB -gpu "num=1:mode=exclusive_process"`.
 - CPU queue `hpc` (72 h max). Default walltime is only 15 min — always set `-W`.
 - Interactive dev nodes: `a100sh`, `voltash`, `sxm2sh`. Shared; use them for a one-step check, then submit batch.

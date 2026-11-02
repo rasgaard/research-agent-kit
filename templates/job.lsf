@@ -8,8 +8,12 @@
 #BSUB -J {{JOB_NAME}}
 #BSUB -n 8
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -R "rusage[mem=32GB]"
-#BSUB -M 32GB
+# `rusage[mem]` is charged per slot: with -n 8 below, this reserves
+# 48GB of host memory for the job. Size it as total/slots.
+#BSUB -R "rusage[mem=6GB]"
+# `-M` is a per-process kill limit and may exceed rusage by at most
+# 1GB, or bsub refuses the job outright.
+#BSUB -M 7GB
 #BSUB -W 1:00
 #BSUB -o {{RUN_DIR}}/logs/%J.out
 #BSUB -e {{RUN_DIR}}/logs/%J.err
@@ -22,7 +26,12 @@ echo "sha={{SHA}} job=$LSB_JOBID host=$(hostname)"
 export PATH="$HOME/.local/bin:$PATH"
 export UV_PROJECT_ENVIRONMENT="{{VENV}}"
 export HF_HOME="{{HF_HOME}}"
+# `hpc secret set` writes `export NAME=value`, but older/hand-written
+# files may be bare assignments, which stay shell variables and never
+# reach python. `set -a` covers both.
+set -a
 [ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
 [ -f "{{PROJECT_SECRETS}}" ] && . "{{PROJECT_SECRETS}}"
+set +a
 
 uv run --frozen --no-sync python -u train.py --out "{{RUN_DIR}}/output"

@@ -4,8 +4,10 @@
 #BSUB -J smoke
 #BSUB -n 4
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -R "rusage[mem=8GB]"
-#BSUB -M 8GB
+# `rusage[mem]` is per slot (4 slots below = 24GB); `-M` is a
+# per-process kill limit and may exceed rusage by at most 1GB.
+#BSUB -R "rusage[mem=6GB]"
+#BSUB -M 7GB
 #BSUB -W 0:10
 #BSUB -o {{RUN_DIR}}/logs/%J.out
 #BSUB -e {{RUN_DIR}}/logs/%J.err

@@ -777,6 +777,122 @@ def uncapped_array(text: str) -> Optional[str]:
     return None
 
 
+# LSF charges `-R rusage[mem=X]` **per slot**, not per job: an 8-slot job asking
+# for 48GB reserves 384GB of host memory. Nothing prints that product until the
+# job's epilogue ("Total Requested Memory"), so it is computed here instead.
+BSUB_DIRECTIVE = re.compile(r"^#BSUB\s+(-{1,2}[A-Za-z]+)\s*(.*)$", re.MULTILINE)
+RUSAGE_MEM = re.compile(r"rusage\[\s*mem\s*=\s*([0-9.]+\s*[KMGT]?B?)\s*\]", re.I)
+MEM_VALUE = re.compile(r"^\s*([0-9.]+)\s*([KMGT]?)B?\s*$", re.I)
+MEM_FACTOR_MB = {"": 1.0, "k": 1 / 1024, "m": 1.0, "g": 1024.0, "t": 1024.0 ** 2}
+
+# The site's esub rejects `-M` more than 1GB above the per-slot rusage request.
+MEM_LIMIT_SLACK_MB = 1024.0
+# Above this aggregate the request is almost certainly a per-job figure typed into
+# a per-slot field; warn rather than fail, because big jobs are legitimate.
+MEM_TOTAL_WARN_MB = 128 * 1024.0
+
+
+def bsub_directives(text: str) -> dict[str, str]:
+    """Last value wins, matching LSF's own behaviour for repeated directives."""
+    directives: dict[str, str] = {}
+    for match in BSUB_DIRECTIVE.finditer(text):
+        directives[match.group(1).lstrip("-")] = match.group(2).strip()
+    return directives
+
+
+def mem_mb(value: Optional[str]) -> Optional[float]:
+    if not value:
+        return None
+    match = MEM_VALUE.match(value)
+    if not match:
+        return None
+    return float(match.group(1)) * MEM_FACTOR_MB[match.group(2).lower()]
+
+
+def rusage_per_slot_mb(text: str) -> Optional[float]:
+    directives = bsub_directives(text)
+    match = RUSAGE_MEM.search(directives.get("R", ""))
+    return mem_mb(match.group(1) if match else None)
+
+
+def slots_of(text: str) -> int:
+    try:
+        return int((bsub_directives(text).get("n") or "1").strip())
+    except ValueError:
+        return 1
+
+
+def resources_summary(text: str) -> Optional[str]:
+    """One line naming the memory the job actually reserves, or None if unset."""
+    directives = bsub_directives(text)
+    per_slot = rusage_per_slot_mb(text)
+    if per_slot is None:
+        return None
+    slots = slots_of(text)
+    total = per_slot * slots
+    parts = [f"{slots} slot(s) x {per_slot / 1024:.1f} GB rusage = "
+             f"{total / 1024:.1f} GB of host memory"]
+    limit = mem_mb(directives.get("M"))
+    if limit is not None:
+        parts.append(f"-M {limit / 1024:.1f} GB per process")
+    walltime = directives.get("W")
+    if walltime:
+        parts.append(f"-W {walltime}")
+    gpu = directives.get("gpu")
+    if gpu:
+        parts.append(f"gpu {gpu.strip(chr(34))}")
+    return "; ".join(parts)
+
+
+def lint_resources(text: str, dry_run: bool) -> None:
+    """Refuse the two memory mistakes this site punishes, and print the totals."""
+    summary = resources_summary(text)
+    if summary is None:
+        return
+    print(f"hpc: resources: {summary}", file=sys.stderr)
+
+    directives = bsub_directives(text)
+    per_slot = rusage_per_slot_mb(text)
+    limit = mem_mb(directives.get("M"))
+    if per_slot is not None and limit is not None:
+        if limit > per_slot + MEM_LIMIT_SLACK_MB:
+            die(f"-M {limit / 1024:.1f} GB exceeds the per-slot rusage request of "
+                f"{per_slot / 1024:.1f} GB; bsub aborts ('memory limit must not exceed "
+                f"the usage by more than 1GB'). Set -M to rusage + 1GB or less.")
+        if limit < per_slot:
+            print(f"hpc: warning: -M {limit / 1024:.1f} GB is below the per-slot "
+                  f"rusage request of {per_slot / 1024:.1f} GB; processes may be "
+                  "killed while the job still reserves the larger amount",
+                  file=sys.stderr)
+
+    slots = slots_of(text)
+    if per_slot is not None and slots > 1 and per_slot * slots > MEM_TOTAL_WARN_MB:
+        print(f"hpc: warning: this reserves {per_slot * slots / 1024:.0f} GB of host "
+              f"memory ({slots} x {per_slot / 1024:.0f} GB). rusage[mem] is charged "
+              "per slot; divide the figure you want by the slot count.", file=sys.stderr)
+
+
+def lint_secrets(text: str, dry_run: bool) -> None:
+    """Refuse a secrets file sourced without `set -a`.
+
+    `hpc secret set` writes `export NAME=value` lines, but files written by earlier
+    versions (and by hand) are bare assignments. Sourcing one defines *shell*
+    variables: `${HF_TOKEN}` looks set while `os.environ["HF_TOKEN"]` is empty, so a
+    gated download fails, or worse, a benchmark silently scores fewer test sets.
+    """
+    if "{{SECRETS}}" not in text and "{{PROJECT_SECRETS}}" not in text:
+        return
+    if re.search(r"^\s*set -a\b", text, re.MULTILINE):
+        return
+    message = ("secrets are sourced without 'set -a': a bare 'NAME=value' file then "
+               "defines shell variables that never reach python/os.environ. "
+               "Wrap the sources in 'set -a' / 'set +a'.")
+    if dry_run:
+        print(f"hpc: warning: {message}", file=sys.stderr)
+    else:
+        die(message)
+
+
 def lint_submit(text: str, queue_override: Optional[str], allow_uncapped: bool,
                 dry_run: bool) -> None:
     name = uncapped_array(text)
@@ -795,6 +911,8 @@ def lint_submit(text: str, queue_override: Optional[str], allow_uncapped: bool,
         if original not in {"default", queue_override}:
             print(f"hpc: warning: --queue {queue_override} overrides script queue "
                   f"{original}", file=sys.stderr)
+    lint_resources(text, dry_run)
+    lint_secrets(text, dry_run)
 
 
 def cmd_login(host: str, _args: argparse.Namespace) -> int:
@@ -963,17 +1081,20 @@ found=0
           key=${key#"${key%%[![:space:]]*}"}
           key=${key%"${key##*[![:space:]]}"}
           if [ "$key" = "$name" ]; then
-            printf '%s=%s\n' "$name" "$value"
+            printf 'export %s=%s\n' "$name" "$value"
             found=1
           else
-            printf '%s\n' "$line"
+            case "$line" in
+              export\ *|EXPORT\ *) printf '%s\n' "$line" ;;
+              *) printf 'export %s\n' "$line" ;;
+            esac
           fi ;;
         *) printf '%s\n' "$line" ;;
       esac
     done <<< "$existing"
   fi
   if [ "$found" -eq 0 ]; then
-    printf '%s=%s\n' "$name" "$value"
+    printf 'export %s=%s\n' "$name" "$value"
   fi
 } > "$tmp"
 chmod 600 "$tmp"
@@ -1045,6 +1166,8 @@ def secret_names(text: Optional[str]) -> list[str]:
         if line.lstrip().startswith("#") or "=" not in line:
             continue
         name = line.split("=", 1)[0].strip()
+        if name.startswith("export "):
+            name = name[len("export "):].strip()
         if SECRET_NAME.match(name):
             names.append(name)
     return names
