@@ -252,6 +252,76 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("uncapped array", result.stderr)
 
+    def test_dry_run_reports_effective_memory(self) -> None:
+        """`rusage[mem]` is per slot; the product must be visible at submit time."""
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J sized
+            #BSUB -n 8
+            #BSUB -R "rusage[mem=6GB]"
+            #BSUB -M 7GB
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("8 slot(s) x 6.0 GB rusage = 48.0 GB", result.stderr)
+        self.assertIn("-M 7.0 GB per process", result.stderr)
+        self.assertNotIn("warning: this reserves", result.stderr)
+
+    def test_memory_limit_above_usage_is_refused(self) -> None:
+        """The site esub aborts; fail locally with the arithmetic instead."""
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J overlimit
+            #BSUB -n 8
+            #BSUB -R "rusage[mem=6GB]"
+            #BSUB -M 12GB
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exceeds the per-slot rusage request", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_oversized_total_memory_is_flagged(self) -> None:
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J oversized
+            #BSUB -n 8
+            #BSUB -R "rusage[mem=48GB]"
+            #BSUB -M 49GB
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("384.0 GB of host memory", result.stderr)
+        self.assertIn("rusage[mem] is charged per slot", result.stderr)
+
+    def test_secrets_without_set_a_is_refused(self) -> None:
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J secrets
+            [ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("without 'set -a'", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_secrets_with_set_a_is_accepted(self) -> None:
+        self.write_job("""\
+            #BSUB -q gpua100
+            #BSUB -J secrets
+            set -a
+            [ -f "{{SECRETS}}" ] && . "{{SECRETS}}"
+            set +a
+            echo "sha={{SHA}}"
+            """)
+        result = self.hpc("submit", "job.lsf", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("without 'set -a'", result.stderr)
+
     def status_jobs(self, include_hosts: bool = False) -> Path:
         records = [
             {
@@ -996,7 +1066,7 @@ class SecretWriteScriptTest(unittest.TestCase):
     def test_creates_missing_file_with_mode_600(self) -> None:
         result = self.run_script("K", "sk-test")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.path.read_text(), "K=sk-test\n")
+        self.assertEqual(self.path.read_text(), "export K=sk-test\n")
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
     def test_preserves_other_lines_and_replaces_key(self) -> None:
@@ -1005,7 +1075,7 @@ class SecretWriteScriptTest(unittest.TestCase):
         result = self.run_script("K", "sk test")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
-            self.path.read_text(), "# keep\nA=1\nK='sk test'\nNOISE\n"
+            self.path.read_text(), "# keep\nexport A=1\nexport K='sk test'\nNOISE\n"
         )
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 

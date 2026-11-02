@@ -133,3 +133,26 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
 - Alternatives: SwiftBar/Übersicht (third-party runtime; rejected); widget running SSH itself (sandbox cannot use the ControlMaster socket; rejected); LaunchAgent plist for `--background` (extra plumbing against the stated SMAppService requirement; deferred, revisit if the login window annoys).
 - Refs: #71.
 - Tags: widget, hpc, swift, workflow, auth.
+
+## 2026-11-02 — Preflight prints effective resources; secrets are written exported
+
+- Context: one project lost a night to four job-configuration failures, all
+  silently wrong until the cluster rejected them: `rusage[mem]` charged per slot
+  (8 x 48 GB = 384 GB reserved, invisible in every LSF view until the job's
+  epilogue), `-M` above the site's rusage+1 GB rule, secrets files sourced without
+  `set -a` (token set in the shell, absent from `os.environ`, a gated dataset
+  silently dropped from a benchmark), and templates/docs that taught the first two.
+- Decision: `hpc submit` (and `--dry-run`) prints
+  `resources: <slots> x <mem> = <total GB>`; refuses `-M` above rusage + 1 GB and
+  secrets sourced without `set -a`; warns above a 128 GB aggregate. `hpc secret
+  set` writes `export NAME=value` and upgrades bare lines on rewrite;
+  `secret list` accepts both. Templates and skill docs corrected.
+- Decision: the interactive check is no longer optional. A code path must not
+  first execute with real inputs in a batch slot — those failures are seconds on a
+  shared node and a queue cycle in batch.
+- Alternatives: leaving it to the operator's attention (rejected: it failed
+  exactly once per project and cost hours each time); computing totals on the
+  cluster after `bsub` (rejected: too late, and `bjobs -l` does not show them);
+  requiring a new `--allow-big-mem` flag (deferred: no legitimate case seen yet).
+- Refs: #75.
+- Tags: hpc, lsf, resources, secrets, preflight, templates.

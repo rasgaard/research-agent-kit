@@ -125,8 +125,12 @@ Request: `#BSUB -gpu "num=1:mode=exclusive_process"`. Extras: `-R "select[gpu32g
 #BSUB -J name
 #BSUB -n 8
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -R "rusage[mem=32GB]"
-#BSUB -M 32GB
+# rusage[mem] is charged PER SLOT: 8 x 6 GB reserves 48 GB for the job.
+# Writing rusage[mem=32GB] here would reserve 256 GB and queue for hours.
+#BSUB -R "rusage[mem=6GB]"
+# -M is a per-process kill limit and may exceed the per-slot rusage by at most
+# 1 GB, or bsub aborts ("memory limit must not exceed the usage by more than 1GB").
+#BSUB -M 7GB
 #BSUB -W 4:00
 #BSUB -o {{RUN_DIR}}/logs/%J.out
 #BSUB -e {{RUN_DIR}}/logs/%J.err
@@ -135,6 +139,10 @@ Request: `#BSUB -gpu "num=1:mode=exclusive_process"`. Extras: `-R "select[gpu32g
 - Always set `-W`; the default is 15 minutes.
 - Over-requesting memory/walltime delays scheduling; under-requesting gets the job killed.
 - Use `-M` (per-process kill limit) *and* `-R rusage` (scheduling request).
+- `hpc submit` prints `resources: <slots> x <mem> = <total>` before submitting and
+  refuses `-M` above the site limit; `--dry-run` shows the same line. Read it — a
+  per-slot/per-job mix-up is invisible in every other view, including `bjobs -l`,
+  which echoes the per-slot number.
 - `python -u` for unbuffered logs so `bpeek` is useful.
 - `p1` batch supports `-W`; the `p1i` interactive queue rejects it.
 - `p1gpush` works, but it passes `TERM` via `-env`; if `TERM` is unset (e.g. bare `ssh -tt`), LSF rejects it. `hpc gpu p1` exports a fallback `TERM` and requests 2 shared H100s, matching the wrapper.

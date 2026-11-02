@@ -213,5 +213,6 @@ Use `python -u` (unbuffered). `bpeek` and `hpc logs -f` then show progress.
 ## A ~4B patient runs out of memory
 
 Load one model at a time and free it between models; request `rusage[mem=32GB]`
-for 4B-class weights, and avoid `device_map=auto` disk-offload warnings on small
-GPUs. A 24 GB L40S/A10 handles 4B inference comfortably; 8 GB does not.
+**per slot** for 4B-class weights — with `-n 8` that is 256 GB, so divide by the
+slot count. Avoid `device_map=auto` disk-offload warnings on small GPUs. A 24 GB
+L40S/A10 handles 4B inference comfortably; 8 GB does not.
