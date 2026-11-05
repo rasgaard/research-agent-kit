@@ -14,7 +14,7 @@ skills/research-init/        # opencode skill: "start a new research project"
 skills/dtu-hpc/              # optional: DTU LSF workflow (local-first, SHA-pinned jobs)
   SKILL.md                   # commands, guardrails, re-auth protocol
   references/                # auth, sync, queues, monitoring — verified DTU docs
-bin/hpc                      # stdlib CLI: init/login/ensure/doctor/sync-env/stage/shell/gpu/submit/status/logs/pull/secret/watch/events
+bin/hpc                      # stdlib CLI: init/login/ensure/doctor/sync-env/stage/shell/gpu/exec/submit/status/logs/pull/secret/watch/events
 examples/hf-smoke/           # uv + torch + transformers + datasets p1 job (verified)
 templates/                   # LSF job + smoke templates, ssh_config, config.ini
 tests/test_hpc.py            # stubbed CLI tests (no network)

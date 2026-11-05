@@ -156,3 +156,11 @@ Older entries (2026-10-16 through 2026-10-20) moved verbatim to [`decisions-arch
   requiring a new `--allow-big-mem` flag (deferred: no legitimate case seen yet).
 - Refs: #75.
 - Tags: hpc, lsf, resources, secrets, preflight, templates.
+
+## 2026-11-05 — `hpc exec` runs detached on the cluster, not through the SSH master
+
+- Context: agents cannot use tmux-based `hpc shell`/`hpc gpu`; a manual `bsub -Is` over the ControlMaster hung and killed the master (#77).
+- Decision: `hpc exec` writes a command script and a wrapper to the cluster, launches the wrapper under `setsid` using `bsub -I` (no pty, no `-W` on `hpcint*`), and polls the log with short SSH calls. Timeout and Ctrl-C `bkill` the job by name; the master is checked afterwards.
+- Alternatives: `bsub -Is` or `qrsh` through the master (rejected: both failed in the field); a long-held streaming ssh (rejected: ties up the master).
+- Refs: #77.
+- Tags: hpc, exec, interactive, ssh, agents.

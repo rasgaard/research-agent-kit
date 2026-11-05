@@ -39,6 +39,10 @@ class HpcCliTest(unittest.TestCase):
               cat >/dev/null 2>&1 || true
             fi
             case "$*" in
+              *"HPCEXEC-STATUS"*)
+                printf 'STUB-EXEC-OUTPUT\\n'
+                printf '\\nHPCEXEC-STATUS:%s' "${HPC_TEST_EXEC_STATUS:-0}"
+                exit 0 ;;
               *"-O check"*)
                 [ "${HPC_TEST_DEAD:-0}" = 1 ] && exit 1
                 exit 0 ;;
@@ -186,6 +190,50 @@ class HpcCliTest(unittest.TestCase):
         log = self.log.read_text()
         self.assertIn("tar -xzf", log)
         self.assertIn("ln -sfn", log)
+
+    def exec_env(self, **extra: str) -> dict[str, str]:
+        return {"HPC_EXEC_POLL": "0", **extra}
+
+    def test_exec_streams_output_and_propagates_success(self) -> None:
+        result = self.hpc("exec", "--", "python", "-c", "print(1)",
+                          extra_env=self.exec_env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STUB-EXEC-OUTPUT", result.stdout)
+        stdin = self.stdin_log.read_text()
+        self.assertIn("bsub -I -q hpcint -n 4", stdin)
+        self.assertNotIn("-W", stdin)
+        self.assertNotIn("-Is", stdin)
+        self.assertIn("exec python -c 'print(1)'", stdin)
+        self.assertIn("TERM:-xterm-256color", stdin)
+
+    def test_exec_propagates_nonzero_exit(self) -> None:
+        result = self.hpc("exec", "--", "false",
+                          extra_env=self.exec_env(HPC_TEST_EXEC_STATUS="3"))
+        self.assertEqual(result.returncode, 3)
+
+    def test_exec_batch_queue_gets_walltime(self) -> None:
+        result = self.hpc("exec", "-q", "hpc", "--timeout", "20m", "--", "true",
+                          extra_env=self.exec_env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("-W 21", self.stdin_log.read_text())
+
+    def test_exec_prints_resource_summary(self) -> None:
+        result = self.hpc("exec", "-n", "2", "-R", "rusage[mem=4GB]", "--", "true",
+                          extra_env=self.exec_env())
+        self.assertIn("2 slot(s) x 4.0 GB", result.stderr)
+
+    def test_exec_times_out_and_cleans_up(self) -> None:
+        result = self.hpc("exec", "--timeout", "0s", "--", "sleep", "9",
+                          extra_env=self.exec_env(HPC_TEST_EXEC_STATUS="-"))
+        self.assertEqual(result.returncode, 124)
+        self.assertIn("bkill", self.log.read_text())
+
+    def test_exec_rejects_bad_queue_and_empty_command(self) -> None:
+        bad = self.hpc("exec", "-q", "a\nb", "--", "true")
+        self.assertNotEqual(bad.returncode, 0)
+        empty = self.hpc("exec")
+        self.assertNotEqual(empty.returncode, 0)
+        self.assertIn("no command", empty.stderr)
 
     def test_stage_refuses_dirty_tree(self) -> None:
         (self.repo / "train.py").write_text("print('changed')\n")

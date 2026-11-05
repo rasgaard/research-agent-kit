@@ -16,7 +16,7 @@ hpc init                 # detect the DTU SSH alias; write config
 hpc login                # one Terminal auth for this session
 hpc sync-env             # build/sync the shared venv when env inputs change (no-op otherwise)
 hpc doctor               # local + remote checks
-hpc stage                # optional interactive smoke
+hpc stage                # ship HEAD for the interactive check (then hpc exec / hpc gpu)
 ```
 
 ## Preconditions
@@ -40,6 +40,11 @@ hpc stage                # optional interactive smoke
     decode audio, download weights, interleave datasets, write to `/work3`". Those
     failures take seconds on a shared node and a queue cycle in batch — one project
     lost a night to three of them in a row. Shared nodes: short tests only.
+    **Agents cannot drive tmux:** use `hpc exec -- <command...>` instead. It runs
+    one command against the staged snapshot on `hpcint`, streams output, and exits
+    with the command's status (`--timeout` kills it; `-n`, `-R` set resources).
+    It never runs `bsub -Is` through the SSH master. Never do that by hand: it
+    wedged the master and cost a re-authentication.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths. Dry-run ships nothing and therefore allows a dirty tree; it still renders `HEAD`.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.
 5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (compact table; add `--detail` for `bstat` pending reasons and array history). `bpeek` shows output of running jobs. For hands-off monitoring, run `hpc watch --notify` in the foreground or background (see `references/monitoring.md`), and read `hpc events --unread` before assuming a job is still healthy.
