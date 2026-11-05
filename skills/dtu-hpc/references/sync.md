@@ -102,6 +102,17 @@ job, normally near the top, in this order so project values win:
 python -u train.py
 ```
 
+Names jobs conventionally rely on (check yours with `hpc secret list --all`):
+
+| Role | Secret name(s) |
+|---|---|
+| HF gated models/datasets, uploads | `HF_TOKEN` |
+| OpenRouter student/judge | `OPENROUTER_API_KEY` |
+| Azure AI Foundry student/judge | `AZURE_API_KEY`, `AZURE_AI_FOUNDRY_ENDPOINT` |
+| Experiment tracking | `WANDB_API_KEY` |
+
+A job written for one provider fails at runtime if only another provider's name is set, so confirm the name exists before submitting.
+
 Values never appear in argv, the repo, or the CLI log. `hpc secret set` takes a
 remote lock, merges one key, writes a mode-600 temporary file, and atomically
 replaces the file; it aborts if the existing file cannot be read and does not

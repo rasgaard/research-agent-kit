@@ -399,6 +399,21 @@ class HpcCliTest(unittest.TestCase):
         self.assertIn('bstat "$1"', log)
         self.assertIn("123", log)
 
+    def test_status_detail_requests_pending_reasons(self) -> None:
+        self.hpc("status", "123", "--detail")
+        self.assertIn("bjobs -p -w", self.log.read_text())
+
+    def test_cancel_kills_job_and_marks_ledger(self) -> None:
+        self.assertEqual(self.hpc("submit", "job.lsf").returncode, 0)
+        result = self.hpc("cancel", "123")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('bkill "$1"', self.log.read_text())
+        ledger = (self.repo / ".git" / "hpc" / "jobs.jsonl").read_text().splitlines()
+        self.assertIn("cancelled_at", json.loads(ledger[-1]))
+
+    def test_cancel_rejects_non_numeric_id(self) -> None:
+        self.assertNotEqual(self.hpc("cancel", "1; rm -rf").returncode, 0)
+
     def test_status_json_error_record_fails(self) -> None:
         bjobs = Path(self.tmp.name) / "bjobs-error.json"
         bjobs.write_text(json.dumps({"RECORDS": [
