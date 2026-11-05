@@ -205,6 +205,8 @@ class HpcCliTest(unittest.TestCase):
         self.assertNotIn("-Is", stdin)
         self.assertIn("exec python -c 'print(1)'", stdin)
         self.assertIn("TERM:-xterm-256color", stdin)
+        self.assertIn('.local/bin:$PATH', stdin)
+        self.assertIn("UV_CACHE_DIR=/work3/tester/.cache/uv", stdin)
 
     def test_exec_propagates_nonzero_exit(self) -> None:
         result = self.hpc("exec", "--", "false",
@@ -216,6 +218,19 @@ class HpcCliTest(unittest.TestCase):
                           extra_env=self.exec_env())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("-W 21", self.stdin_log.read_text())
+
+    def test_exec_defaults_silence_lsf_warnings(self) -> None:
+        result = self.hpc("exec", "--", "true", extra_env=self.exec_env())
+        stdin = self.stdin_log.read_text()
+        self.assertIn("rusage[mem=2GB]", stdin)
+        self.assertIn("span[hosts=1]", stdin)
+        self.assertIn("4 slot(s) x 2.0 GB", result.stderr)
+
+    def test_exec_explicit_rusage_replaces_default(self) -> None:
+        self.hpc("exec", "-R", "rusage[mem=1GB]", "--", "true", extra_env=self.exec_env())
+        stdin = self.stdin_log.read_text()
+        self.assertNotIn("mem=2GB", stdin)
+        self.assertIn("span[hosts=1]", stdin)
 
     def test_exec_prints_resource_summary(self) -> None:
         result = self.hpc("exec", "-n", "2", "-R", "rusage[mem=4GB]", "--", "true",

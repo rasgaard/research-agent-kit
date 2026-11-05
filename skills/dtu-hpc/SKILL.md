@@ -43,7 +43,7 @@ hpc stage                # ship HEAD for the interactive check (then hpc exec / 
     **Agents cannot drive tmux:** use `hpc exec -- <command...>` instead. It runs
     one command against the staged snapshot on `hpcint`, streams output, and exits
     with the command's status (`--timeout` kills it; `-n`, `-R` set resources).
-    It never runs `bsub -Is` through the SSH master. Never do that by hand: it
+    Defaults: `rusage[mem=2GB]` per slot and `span[hosts=1]` (silences LSF's advisory lines); `uv` is on PATH, so `uv run --script file.py` with inline (PEP 723) deps works. It never runs `bsub -Is` through the SSH master. Never do that by hand: it
     wedged the master and cost a re-authentication.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths. Dry-run ships nothing and therefore allows a dirty tree; it still renders `HEAD`.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.

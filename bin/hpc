@@ -1272,6 +1272,7 @@ def cmd_stage(host: str, args: argparse.Namespace) -> int:
 
 
 EXEC_STATUS_MARK = b"\nHPCEXEC-STATUS:"
+EXEC_DEFAULT_MEM = "2GB"  # per slot
 EXEC_UNITS = {"s": 1, "m": 60, "h": 3600}
 
 
@@ -1287,7 +1288,8 @@ def exec_bsub_directives(queue: str, slots: int, rusage: list[str],
                          walltime: Optional[str]) -> str:
     """The #BSUB lines `exec` will pass, so preflight can summarise them."""
     lines = [f"#BSUB -q {queue}", f"#BSUB -n {slots}"]
-    lines += [f'#BSUB -R "{r}"' for r in rusage]
+    if rusage:  # LSF merges repeated -R; the summary parser keeps only the last
+        lines.append(f'#BSUB -R "{" ".join(rusage)}"')
     if walltime:
         lines.append(f"#BSUB -W {walltime}")
     return "\n".join(lines) + "\n"
@@ -1344,16 +1346,21 @@ def cmd_exec(host: str, args: argparse.Namespace) -> int:
     if not QUEUE_RE.fullmatch(args.queue):
         die(f"invalid queue {args.queue!r}: use only letters, digits, '.', '_' or '-'")
     timeout = parse_duration(args.timeout)
+    rusage = list(args.rusage)
+    # Without these LSF prints advisory lines on every run; the defaults are
+    # explicit so the preflight summary shows what is really reserved.
+    if not any("rusage" in r for r in rusage):
+        rusage.append(f"rusage[mem={EXEC_DEFAULT_MEM}]")
+    if not any("span" in r for r in rusage):
+        rusage.append("span[hosts=1]")
+    args.rusage = rusage
     interactive = args.queue.startswith("hpcint")
     walltime = None
     if not interactive:  # interactive queues reject -W outright
         walltime = f"{-(-timeout // 60) + 1}"
     root = repo_root()
     directives = exec_bsub_directives(args.queue, args.slots, args.rusage, walltime)
-    summary = resources_summary(directives)
-    if summary:
-        print(f"hpc: resources: {summary}", file=sys.stderr)
-    lint_resources(directives, dry_run=False)
+    lint_resources(directives, dry_run=False)  # prints the summary, refuses bad -M
 
     ensure(host)
     config = load_config()
@@ -1362,13 +1369,16 @@ def cmd_exec(host: str, args: argparse.Namespace) -> int:
     current = f"{base}/interactive/current"
     if ssh(host, [f"test -d {shlex.quote(current)}"]).returncode != 0:
         die(f"no staged snapshot at {current}; run: hpc stage")
-    venv = render_values(config, root, current, current, "", "exec", user, home)["VENV"]
+    values = render_values(config, root, current, current, "", "exec", user, home)
+    venv, uv_cache = values["VENV"], values["UV_CACHE"]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     token = f"{stamp}-{os.getpid()}"
     run_dir = f"{base}/interactive/exec/{token}"
     job_name = f"hpcexec-{token}"
     cmd_sh = ("#!/bin/bash\n"
               "export TERM=${TERM:-xterm-256color}\n"
+              'export PATH="$HOME/.local/bin:$PATH"\n'  # uv, as in sync-env
+              f"export UV_CACHE_DIR={shlex.quote(uv_cache)}\n"
               f"cd {shlex.quote(current)}\n"
               f"[ -x {shlex.quote(venv)}/bin/python ] && "
               f"export PATH={shlex.quote(venv)}/bin:$PATH\n"
@@ -1902,7 +1912,8 @@ def build_parser() -> argparse.ArgumentParser:
     execp.add_argument("-q", "--queue", default="hpcint")
     execp.add_argument("-n", "--slots", type=int, default=4)
     execp.add_argument("-R", "--rusage", action="append", default=[],
-                       help='resource string, repeatable, e.g. "rusage[mem=4GB]"')
+                       help='resource string, repeatable, e.g. "rusage[mem=4GB]" '
+                            "(defaults: rusage[mem=2GB] per slot, span[hosts=1])")
     execp.add_argument("--timeout", default="20m", help="e.g. 90s, 20m, 1h")
     execp.add_argument("command", nargs=argparse.REMAINDER)
     execp.set_defaults(func=cmd_exec)
