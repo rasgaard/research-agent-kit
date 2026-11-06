@@ -1271,6 +1271,163 @@ def cmd_stage(host: str, args: argparse.Namespace) -> int:
     return 0
 
 
+EXEC_STATUS_MARK = b"\nHPCEXEC-STATUS:"
+EXEC_DEFAULT_MEM = "2GB"  # per slot
+EXEC_UNITS = {"s": 1, "m": 60, "h": 3600}
+
+
+def parse_duration(value: str) -> int:
+    """Parse '90s', '20m', '1h' (bare numbers are minutes) into seconds."""
+    match = re.fullmatch(r"(\d+)([smh]?)", value.strip())
+    if not match:
+        die(f"invalid duration {value!r}: use e.g. 90s, 20m, 1h")
+    return int(match.group(1)) * EXEC_UNITS[match.group(2) or "m"]
+
+
+def exec_bsub_directives(queue: str, slots: int, rusage: list[str],
+                         walltime: Optional[str]) -> str:
+    """The #BSUB lines `exec` will pass, so preflight can summarise them."""
+    lines = [f"#BSUB -q {queue}", f"#BSUB -n {slots}"]
+    if rusage:  # LSF merges repeated -R; the summary parser keeps only the last
+        lines.append(f'#BSUB -R "{" ".join(rusage)}"')
+    if walltime:
+        lines.append(f"#BSUB -W {walltime}")
+    return "\n".join(lines) + "\n"
+
+
+def exec_launcher(job_name: str, queue: str, slots: int, rusage: list[str],
+                  walltime: Optional[str], run_dir: str) -> str:
+    """Detached wrapper: bsub -I (no pty) with output and exit status in files.
+
+    Runs on the cluster under setsid, so the SSH master never carries the
+    interactive LSF session (a `bsub -Is` through the master wedged it, #77).
+    """
+    flags = f"-I -q {queue} -n {slots} -J {job_name}"
+    flags += "".join(f" -R {shlex.quote(r)}" for r in rusage)
+    if walltime:
+        flags += f" -W {walltime}"
+    return (f"#!/bin/bash\ncd {shlex.quote(run_dir)}\n"
+            f"bsub {flags} bash {shlex.quote(run_dir + '/cmd.sh')} "
+            "> out.log 2>&1 < /dev/null\n"
+            "echo $? > status.tmp && mv status.tmp status\n")
+
+
+def exec_poll(host: str, run_dir: str, offset: int) -> tuple[bytes, Optional[int]]:
+    """Fetch new output bytes and the exit status (None while still running)."""
+    script = ('f="$1/out.log"; [ -f "$f" ] && tail -c +"$2" "$f"; '
+              'printf "\\nHPCEXEC-STATUS:"; '
+              'cat "$1/status" 2>/dev/null || printf -- "-"')
+    result = ssh_login(host, script, [run_dir, str(offset + 1)], text=False)
+    if result.returncode != 0:
+        raise OSError(result.stderr.decode(errors="replace").strip() or "ssh failed")
+    data = result.stdout
+    if EXEC_STATUS_MARK not in data:
+        raise OSError("malformed poll output")
+    chunk, _, tail = data.rpartition(EXEC_STATUS_MARK)
+    code = tail.strip().decode(errors="replace")
+    return chunk, int(code) if code.isdigit() else None
+
+
+def exec_cleanup(host: str, job_name: str, run_dir: str) -> None:
+    """Kill the LSF job and wrapper; never raise, never prompt."""
+    try:
+        ssh_login_batch(host, 'bkill -J "$1" >/dev/null 2>&1; '
+                        'pkill -f "$2/launch.sh" >/dev/null 2>&1; true',
+                        [job_name, run_dir], timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        print("hpc: warning: could not confirm remote cleanup; check: hpc status",
+              file=sys.stderr)
+
+
+def cmd_exec(host: str, args: argparse.Namespace) -> int:
+    command = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not command:
+        die("no command given; usage: hpc exec [options] -- <command...>")
+    if not QUEUE_RE.fullmatch(args.queue):
+        die(f"invalid queue {args.queue!r}: use only letters, digits, '.', '_' or '-'")
+    timeout = parse_duration(args.timeout)
+    rusage = list(args.rusage)
+    # Without these LSF prints advisory lines on every run; the defaults are
+    # explicit so the preflight summary shows what is really reserved.
+    if not any("rusage" in r for r in rusage):
+        rusage.append(f"rusage[mem={EXEC_DEFAULT_MEM}]")
+    if not any("span" in r for r in rusage):
+        rusage.append("span[hosts=1]")
+    args.rusage = rusage
+    interactive = args.queue.startswith("hpcint")
+    walltime = None
+    if not interactive:  # interactive queues reject -W outright
+        walltime = f"{-(-timeout // 60) + 1}"
+    root = repo_root()
+    directives = exec_bsub_directives(args.queue, args.slots, args.rusage, walltime)
+    lint_resources(directives, dry_run=False)  # prints the summary, refuses bad -M
+
+    ensure(host)
+    config = load_config()
+    user, home = remote_env(host)
+    base = config["remote_root"].format(user=user, home=home, repo=root.name)
+    current = f"{base}/interactive/current"
+    if ssh(host, [f"test -d {shlex.quote(current)}"]).returncode != 0:
+        die(f"no staged snapshot at {current}; run: hpc stage")
+    values = render_values(config, root, current, current, "", "exec", user, home)
+    venv, uv_cache = values["VENV"], values["UV_CACHE"]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    token = f"{stamp}-{os.getpid()}"
+    run_dir = f"{base}/interactive/exec/{token}"
+    job_name = f"hpcexec-{token}"
+    cmd_sh = ("#!/bin/bash\n"
+              "export TERM=${TERM:-xterm-256color}\n"
+              'export PATH="$HOME/.local/bin:$PATH"\n'  # uv, as in sync-env
+              f"export UV_CACHE_DIR={shlex.quote(uv_cache)}\n"
+              f"cd {shlex.quote(current)}\n"
+              f"[ -x {shlex.quote(venv)}/bin/python ] && "
+              f"export PATH={shlex.quote(venv)}/bin:$PATH\n"
+              f"exec {shlex.join(command)}\n")
+    launch = exec_launcher(job_name, args.queue, args.slots, args.rusage, walltime, run_dir)
+    ssh(host, [f"mkdir -p {shlex.quote(run_dir)} && cat > {shlex.quote(run_dir)}/cmd.sh"],
+        input=cmd_sh, check=True)
+    ssh(host, [f"cat > {shlex.quote(run_dir)}/launch.sh"], input=launch, check=True)
+    started = ssh_login(host, 'cd "$1" && (setsid nohup bash launch.sh '
+                        '>/dev/null 2>&1 </dev/null &)', [run_dir])
+    if started.returncode != 0:
+        die(started.stderr.strip() or "could not launch the detached job")
+    print(f"hpc: exec {job_name} on {args.queue} (stage snapshot {current})",
+          file=sys.stderr)
+
+    deadline = time.monotonic() + timeout
+    interval = float(os.environ.get("HPC_EXEC_POLL", "2"))
+    offset = 0
+    status: Optional[int] = None
+    try:
+        while True:
+            try:
+                chunk, status = exec_poll(host, run_dir, offset)
+            except OSError as exc:
+                print(f"hpc: poll failed ({exc}); re-checking SSH master", file=sys.stderr)
+                ensure(host)
+                chunk, status = b"", None
+            if chunk:
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+                offset += len(chunk)
+            if status is not None:
+                return status
+            if time.monotonic() >= deadline:
+                print(f"hpc: exec timed out after {args.timeout}; killing {job_name}",
+                      file=sys.stderr)
+                exec_cleanup(host, job_name, run_dir)
+                return 124
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print(f"\nhpc: interrupted; killing {job_name}", file=sys.stderr)
+        exec_cleanup(host, job_name, run_dir)
+        return 130
+    finally:
+        if not socket_alive(host):
+            print(f"hpc: warning: SSH master for {host} is gone; run: hpc login",
+                  file=sys.stderr)
+
+
 def cmd_submit(host: str, args: argparse.Namespace) -> int:
     script = Path(args.script)
     if not script.exists():
@@ -1769,6 +1926,16 @@ def build_parser() -> argparse.ArgumentParser:
     stage = sub.add_parser("stage", help="ship HEAD to /work3 for interactive testing")
     stage.add_argument("--allow-dirty", action="store_true")
     stage.set_defaults(func=cmd_stage)
+
+    execp = sub.add_parser("exec", help="run one command on an interactive node, stream output")
+    execp.add_argument("-q", "--queue", default="hpcint")
+    execp.add_argument("-n", "--slots", type=int, default=4)
+    execp.add_argument("-R", "--rusage", action="append", default=[],
+                       help='resource string, repeatable, e.g. "rusage[mem=4GB]" '
+                            "(defaults: rusage[mem=2GB] per slot, span[hosts=1])")
+    execp.add_argument("--timeout", default="20m", help="e.g. 90s, 20m, 1h")
+    execp.add_argument("command", nargs=argparse.REMAINDER)
+    execp.set_defaults(func=cmd_exec)
 
     submit = sub.add_parser("submit", help="ship HEAD and submit an LSF job")
     submit.add_argument("script")

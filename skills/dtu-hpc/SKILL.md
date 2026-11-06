@@ -16,7 +16,7 @@ hpc init                 # detect the DTU SSH alias; write config
 hpc login                # one Terminal auth for this session
 hpc sync-env             # build/sync the shared venv when env inputs change (no-op otherwise)
 hpc doctor               # local + remote checks
-hpc stage                # optional interactive smoke
+hpc stage                # ship HEAD for the interactive check (then hpc exec / hpc gpu)
 ```
 
 ## Preconditions
@@ -40,8 +40,13 @@ hpc stage                # optional interactive smoke
     decode audio, download weights, interleave datasets, write to `/work3`". Those
     failures take seconds on a shared node and a queue cycle in batch — one project
     lost a night to three of them in a row. Shared nodes: short tests only.
-    **Agent-runnable substitute:** an agent cannot attach to tmux, so submit a
-    tiny batch smoke instead (one unit of work, e.g. one persona and two turns,
+    **Agents cannot drive tmux:** use `hpc exec -- <command...>` instead. It runs
+    one command against the staged snapshot on `hpcint`, streams output, and exits
+    with the command's status (`--timeout` kills it; `-n`, `-R` set resources).
+    Defaults: `rusage[mem=2GB]` per slot and `span[hosts=1]` (silences LSF's advisory lines); `uv` is on PATH, so `uv run --script file.py` with inline (PEP 723) deps works. It never runs `bsub -Is` through the SSH master. Never do that by hand: it
+    wedged the master and cost a re-authentication.
+    **Fallback when `hpc exec` is unsuitable** (e.g. the check needs a GPU or more
+    than an interactive node offers): submit a tiny batch smoke instead (one unit of work, e.g. one persona and two turns,
     on the *same queue and resources* as the real job, `-W 0:15`). It satisfies
     this rule when it runs the real entry point end to end; a bare import check
     does not.
@@ -64,6 +69,7 @@ hpc stage                  # ship HEAD to /work3/.../interactive/current
 hpc shell                  # linuxsh shared CPU node, in tmux
 hpc gpu a100|v100|sxm2     # shared GPU node, in tmux (short tests only)
 hpc gpu p1                 # p1gpush (2 shared H100s)
+hpc exec [-q Q] [-n N] [-R R] [--timeout T] -- CMD...  # one command on hpcint, streamed (agent-friendly)
 hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty] [--allow-uncapped]
 hpc status [id] [--hosts] [--detail]  # compact table; --hosts adds exec/from; --detail uses bstat
 hpc cancel <id>            # bkill (login shell) + mark cancelled in the ledger
