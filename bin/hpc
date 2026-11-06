@@ -1685,7 +1685,9 @@ def cmd_status(host: str, args: argparse.Namespace) -> int:
     ensure(host)
     if args.detail:
         script = ('if command -v bstat >/dev/null 2>&1; then bstat "$1"; '
-                  'else bjobs -w "$1"; fi')
+                  'else bjobs -w "$1"; fi; '
+                  'p=$(bjobs -p -w "$1" 2>/dev/null); '
+                  '[ -n "$p" ] && printf "\\npending reasons:\\n%s\\n" "$p"; true')
         result = ssh_login(host, script, [args.job_id], check=False)
         sys.stdout.write(result.stdout)
         sys.stderr.write(result.stderr)
@@ -1774,6 +1776,23 @@ def cmd_pull(host: str, args: argparse.Namespace) -> int:
         print("hpc: excluded code/ (use --include-code to include it)",
               file=sys.stderr)
     print(f"hpc: pulled {entry['run_dir']} → {destination}")
+    return 0
+
+
+def cmd_cancel(host: str, args: argparse.Namespace) -> int:
+    """bkill a job (login shell, so LSF is on PATH) and note it in the ledger."""
+    if not args.job_id.isdigit():
+        die(f"invalid job id {args.job_id!r}")
+    ensure(host)
+    result = ssh_login(host, 'bkill "$1"', [args.job_id])
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    if result.returncode != 0:
+        return result.returncode
+    root = optional_repo_root()
+    if root is not None and find_job(root, args.job_id):
+        append_ledger(root, {**find_job(root, args.job_id),
+                             "cancelled_at": datetime.now(timezone.utc).isoformat()})
     return 0
 
 
@@ -1937,6 +1956,10 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true",
                         help="machine-readable status; never prompts for auth")
     status.set_defaults(func=cmd_status)
+
+    cancel = sub.add_parser("cancel", help="bkill a job and mark it cancelled in the ledger")
+    cancel.add_argument("job_id")
+    cancel.set_defaults(func=cmd_cancel)
 
     logs = sub.add_parser("logs", help="bpeek or tail the job logs")
     logs.add_argument("job_id")
