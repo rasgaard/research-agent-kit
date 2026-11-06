@@ -40,9 +40,14 @@ hpc stage                # optional interactive smoke
     decode audio, download weights, interleave datasets, write to `/work3`". Those
     failures take seconds on a shared node and a queue cycle in batch — one project
     lost a night to three of them in a row. Shared nodes: short tests only.
+    **Agent-runnable substitute:** an agent cannot attach to tmux, so submit a
+    tiny batch smoke instead (one unit of work, e.g. one persona and two turns,
+    on the *same queue and resources* as the real job, `-W 0:15`). It satisfies
+    this rule when it runs the real entry point end to end; a bare import check
+    does not.
 3. **Dry run.** `hpc submit jobs/<job>.lsf --dry-run` to inspect the rendered script and paths. Dry-run ships nothing and therefore allows a dirty tree; it still renders `HEAD`.
 4. **Submit.** `hpc submit jobs/<job>.lsf` → job id, run dir, ledger entry in `.git/hpc/jobs.jsonl`.
-5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (compact table; add `--detail` for `bstat` pending reasons and array history). `bpeek` shows output of running jobs. For hands-off monitoring, run `hpc watch --notify` in the foreground or background (see `references/monitoring.md`), and read `hpc events --unread` before assuming a job is still healthy.
+5. **Watch.** `hpc logs <id> -f` (follow) or `hpc status <id>` (compact table; add `--detail` for `bstat` output, pending reasons from `bjobs -p`, and array history). `bpeek` shows output of running jobs. For hands-off monitoring, run `hpc watch --notify` in the foreground or background (see `references/monitoring.md`), and read `hpc events --unread` before assuming a job is still healthy.
 6. **Pull.** `hpc pull <id>` → `runs/<run_id>/`. Commit small metrics; upload large artefacts to a private HF repo.
 
 ## Commands
@@ -61,6 +66,7 @@ hpc gpu a100|v100|sxm2     # shared GPU node, in tmux (short tests only)
 hpc gpu p1                 # p1gpush (2 shared H100s)
 hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty] [--allow-uncapped]
 hpc status [id] [--hosts] [--detail]  # compact table; --hosts adds exec/from; --detail uses bstat
+hpc cancel <id>            # bkill (login shell) + mark cancelled in the ledger
 hpc logs <id> [-f] [--index N]  # tail per-element logs for arrays
 hpc pull <id> [--dest D] [--include-code]  # rsync; code/ is skipped by default
 hpc watch [--once] [--notify]  # poll ledger jobs and write events (60 s loop)
@@ -70,7 +76,7 @@ hpc events [--unread] [--json] # agent-facing event feed
 ## Job scripts and queues
 
 - **Stay on one queue.** Default GPU batch queue is `p1`. Do not rotate queues because a snapshot shows fewer “jobs ahead”: `bstat`/`classstat`/`showstart` estimates are noisy, and killing a pending job loses its position. Switch only for (a) explicit user instruction or (b) a hard resource mismatch (GPU model/memory, walltime, access/quota) that `p1` cannot satisfy. State the reason once in the issue/PR and make one deliberate switch — never a shuffle loop.
-- Start from `templates/job.lsf` / `templates/smoke.lsf`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}`, `{{PROJECT_SECRETS}}` are rendered by the CLI.
+- Start from `templates/job.lsf` / `templates/smoke.lsf`. These live at the **kit root** (`<kit>/templates/`, where `<kit>` is the parent of `bin/`: `dirname "$(dirname "$(readlink -f "$(command -v hpc)")")"`), not inside this skill directory; `research-init` also copies them into each project's `templates/`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}`, `{{PROJECT_SECRETS}}` are rendered by the CLI.
 - **`rusage[mem]` is charged per slot**, not per job: `-n 8` with
   `rusage[mem=48GB]` reserves **384 GB** of host memory and will queue for hours
   behind jobs that fit. Divide the total you want by the slot count. `hpc submit`
@@ -92,7 +98,7 @@ hpc events [--unread] [--json] # agent-facing event feed
 
 - Never run training or applications on the login node; only submit and inspect.
 - `hpc sync-env` is the bounded exception: one `uv sync --locked` per environment-input change, using the UV cache, with a 10-minute timeout. It is for Python packages only — HF weights/datasets still belong on compute nodes. If a login-node HF download hangs, stop and submit a short cache job; set `HF_HUB_OFFLINE=1` only after that job has populated `HF_HOME`. Bound any login-node cache test with `timeout 60`.
-- Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `bkill` duplicates. Never kill a pending/running job solely to chase a shorter queue.
+- Queues are shared: keep at most one smoke/pilot job in flight; check `hpc status` and the ledger before submitting, and `hpc cancel <id>` duplicates. Never kill a pending/running job solely to chase a shorter queue.
 - Never put tokens, keys, or the DTU password in the repo or job scripts. Local `export` does not cross `hpc submit`; use `hpc secret set NAME` (or `--project`), then source `{{SECRETS}}` and `{{PROJECT_SECRETS}}` in the job (see `references/sync.md`). Project scoping is organizational, not an access boundary.
 - Code is immutable per run: if you need a change, commit and submit a new job; do not edit `{{CODE_DIR}}`.
 - Data lives in `/work3/$USER` (not backed up) or a private HF repo pinned by revision; home is 30 GB and backed up.

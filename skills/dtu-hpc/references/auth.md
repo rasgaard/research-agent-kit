@@ -12,7 +12,7 @@ Source: <https://www.hpc.dtu.dk/?page_id=4317> (DTU DCC).
 
 ## One authentication per session
 
-`~/.ssh/config` or an included file such as `~/.ssh/config.d/dtu` (copy `templates/ssh_config`):
+`~/.ssh/config` or an included file such as `~/.ssh/config.d/dtu` (copy `templates/ssh_config` from the kit root, i.e. the parent of `bin/`, not from this skill directory):
 
 ```sshconfig
 Host dtu
