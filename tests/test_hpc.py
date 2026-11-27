@@ -219,6 +219,17 @@ class HpcCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("-W 21", self.stdin_log.read_text())
 
+    def test_exec_interactive_gpu_queues_omit_walltime(self) -> None:
+        for queue in ("gpua100i", "p1i"):
+            with self.subTest(queue=queue):
+                self.stdin_log.write_text("")
+                result = self.hpc("exec", "-q", queue, "--timeout", "20m", "--", "true",
+                                  extra_env=self.exec_env())
+                self.assertEqual(result.returncode, 0, result.stderr)
+                stdin = self.stdin_log.read_text()
+                self.assertIn(f"bsub -I -q {queue} -n 4", stdin)
+                self.assertNotIn("-W", stdin)
+
     def test_exec_defaults_silence_lsf_warnings(self) -> None:
         result = self.hpc("exec", "--", "true", extra_env=self.exec_env())
         stdin = self.stdin_log.read_text()
