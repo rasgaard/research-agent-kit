@@ -1276,6 +1276,15 @@ EXEC_DEFAULT_MEM = "2GB"  # per slot
 EXEC_UNITS = {"s": 1, "m": 60, "h": 3600}
 
 
+def is_interactive_queue(queue: str) -> bool:
+    """DTU interactive queues: hpcint* and the *i queues (p1i, gpua100i, ...).
+
+    Both families reject `-W` ("walltime not supported"), so `hpc exec` must
+    not send one; --timeout still bounds the local poll/kill.
+    """
+    return queue.startswith("hpcint") or queue.endswith("i")
+
+
 def parse_duration(value: str) -> int:
     """Parse '90s', '20m', '1h' (bare numbers are minutes) into seconds."""
     match = re.fullmatch(r"(\d+)([smh]?)", value.strip())
@@ -1354,7 +1363,7 @@ def cmd_exec(host: str, args: argparse.Namespace) -> int:
     if not any("span" in r for r in rusage):
         rusage.append("span[hosts=1]")
     args.rusage = rusage
-    interactive = args.queue.startswith("hpcint")
+    interactive = is_interactive_queue(args.queue)
     walltime = None
     if not interactive:  # interactive queues reject -W outright
         walltime = f"{-(-timeout // 60) + 1}"

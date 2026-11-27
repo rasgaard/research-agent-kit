@@ -69,7 +69,7 @@ hpc stage                  # ship HEAD to /work3/.../interactive/current
 hpc shell                  # linuxsh shared CPU node, in tmux
 hpc gpu a100|v100|sxm2     # shared GPU node, in tmux (short tests only)
 hpc gpu p1                 # p1gpush (2 shared H100s)
-hpc exec [-q Q] [-n N] [-R R] [--timeout T] -- CMD...  # one command on hpcint, streamed (agent-friendly)
+hpc exec [-q Q] [-n N] [-R R] [--timeout T] -- CMD...  # one command on an interactive queue (hpcint, p1i, gpua100i, ...), streamed (agent-friendly)
 hpc submit jobs/job.lsf    # [--dry-run] [--name NAME] [--allow-dirty] [--allow-uncapped]
 hpc status [id] [--hosts] [--detail]  # compact table; --hosts adds exec/from; --detail uses bstat
 hpc cancel <id>            # bkill (login shell) + mark cancelled in the ledger
@@ -82,6 +82,7 @@ hpc events [--unread] [--json] # agent-facing event feed
 ## Job scripts and queues
 
 - **Stay on one queue.** Default GPU batch queue is `p1`. Do not rotate queues because a snapshot shows fewer “jobs ahead”: `bstat`/`classstat`/`showstart` estimates are noisy, and killing a pending job loses its position. Switch only for (a) explicit user instruction or (b) a hard resource mismatch (GPU model/memory, walltime, access/quota) that `p1` cannot satisfy. State the reason once in the issue/PR and make one deliberate switch — never a shuffle loop.
+- **Interactive `*i` queues reject walltime** (`bsub error: walltime not supported!`). `hpc exec` omits `-W` for `hpcint*` and `*i` queues (`p1i`, `gpua100i`, ...); its `--timeout` still bounds the local poll/kill. Batch queues keep `-W`.
 - Start from `templates/job.lsf` / `templates/smoke.lsf`. These live at the **kit root** (`<kit>/templates/`, where `<kit>` is the parent of `bin/`: `dirname "$(dirname "$(readlink -f "$(command -v hpc)")")"`), not inside this skill directory; `research-init` also copies them into each project's `templates/`. Placeholders `{{CODE_DIR}}`, `{{RUN_DIR}}`, `{{SHA}}`, `{{JOB_NAME}}`, `{{VENV}}`, `{{HF_HOME}}`, `{{UV_CACHE}}`, `{{SECRETS}}`, `{{PROJECT_SECRETS}}` are rendered by the CLI.
 - **`rusage[mem]` is charged per slot**, not per job: `-n 8` with
   `rusage[mem=48GB]` reserves **384 GB** of host memory and will queue for hours
